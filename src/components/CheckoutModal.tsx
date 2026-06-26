@@ -11,8 +11,7 @@ import {
 } from 'lucide-react';
 import type { Customer, Bill, CafeSettings, PaymentMethod, PaymentDetails } from '../types';
 import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, getBills, calculateBasementCharge } from '../utils/db';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { generateAIWhatsAppMessage } from '../utils/ai';
 
 interface CheckoutModalProps {
@@ -196,122 +195,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Professional jsPDF generator
   const downloadPDFBill = (billObj: Bill) => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: [80, 200] // Standard Thermal Receipt size (80mm width)
-    });
-
-    // Header info
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(settings.name, 40, 10, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(settings.address, 40, 14, { align: 'center', maxWidth: 70 });
-    doc.text(`Phone: ${settings.phone}`, 40, 19, { align: 'center' });
-    
-    doc.setLineWidth(0.1);
-    doc.line(5, 22, 75, 22);
-
-    // Bill metadata
-    let metaY = 26;
-    doc.setFont('helvetica', 'bold');
-    doc.text(`INVOICE: ${billObj.billNumber}`, 5, metaY);
-    doc.setFont('helvetica', 'normal');
-    
-    metaY += 4;
-    const formattedDate = (billObj.location === 'Main Hall' || billObj.location === 'Takeaway')
-      ? new Date(billObj.exitTime).toLocaleDateString()
-      : new Date(billObj.exitTime).toLocaleString();
-    doc.text(`Date: ${formattedDate}`, 5, metaY);
-    
-    metaY += 4;
-    doc.text(`Guest Name: ${billObj.customerName}`, 5, metaY);
-    
-    metaY += 4;
-    doc.text(`Phone No: ${billObj.customerPhone}`, 5, metaY);
-    
-    if (billObj.location !== 'Main Hall') {
-      metaY += 4;
-      doc.text(`Area: ${billObj.location}`, 5, metaY);
-    }
-    
-    // Seating times (only for Basement lounge tracking)
-    if (billObj.location === 'Basement') {
-      metaY += 4;
-      const eTime = new Date(billObj.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const xTime = new Date(billObj.exitTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      doc.text(`In: ${eTime} | Out: ${xTime} (${billObj.timeSpentMinutes} mins)`, 5, metaY);
-    }
-
-    metaY += 3;
-    doc.line(5, metaY, 75, metaY);
-
-    // Table of items
-    const tableData = billObj.orderedItems.map(item => [
-      item.name,
-      `${item.quantity}x`,
-      `${(item.price * item.quantity).toFixed(2)}`
-    ]);
-
-    // Add basement charges if present
-    if (billObj.basementCharges > 0) {
-      tableData.push([
-        `Basement Fee (${billObj.timeSpentMinutes} min)`,
-        '1x',
-        billObj.basementCharges.toFixed(2)
-      ]);
-    }
-
-    autoTable(doc, {
-      startY: metaY + 2,
-      margin: { left: 5, right: 5 },
-      head: [['Item Name', 'Qty', 'Total']],
-      body: tableData,
-      theme: 'plain',
-      styles: { fontSize: 6.5, cellPadding: 1, font: 'helvetica' },
-      headStyles: { fontStyle: 'bold', fillColor: [240, 240, 240] },
-      columnStyles: {
-        0: { cellWidth: 'auto' },
-        1: { cellWidth: 10, halign: 'center' },
-        2: { cellWidth: 15, halign: 'right' }
-      }
-    });
-
-    const finalY = (doc as any).lastAutoTable.finalY + 4;
-
-    // Billing totals
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Subtotal:`, 40, finalY, { align: 'right' });
-    doc.text(`${billObj.subtotal.toFixed(2)}`, 75, finalY, { align: 'right' });
-
-    if (billObj.discount > 0) {
-      doc.text(`Discount:`, 40, finalY + 4, { align: 'right' });
-      doc.text(`-${billObj.discount.toFixed(2)}`, 75, finalY + 4, { align: 'right' });
-    }
-
-    if (billObj.extraCharges > 0) {
-      doc.text(`Extra Charges:`, 40, finalY + 8, { align: 'right' });
-      doc.text(`+${billObj.extraCharges.toFixed(2)}`, 75, finalY + 8, { align: 'right' });
-    }
-
-    doc.text(`GST (${settings.gstPercentage}%):`, 40, finalY + 12, { align: 'right' });
-    doc.text(`${billObj.tax.toFixed(2)}`, 75, finalY + 12, { align: 'right' });
-
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Grand Total:`, 40, finalY + 17, { align: 'right' });
-    doc.text(`${settings.currency}${billObj.grandTotal.toFixed(2)}`, 75, finalY + 17, { align: 'right' });
-
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Payment: ${billObj.paymentMethod} (${billObj.status})`, 5, finalY + 23);
-    doc.text(`Cashier: ${billObj.cashierName}`, 5, finalY + 27);
-
-    // Receipt Footer
-    doc.setFont('helvetica', 'italic');
-    doc.text(settings.receiptFooter, 40, finalY + 34, { align: 'center', maxWidth: 70 });
-
-    doc.save(`${billObj.billNumber}_${billObj.customerName.replace(/\s+/g, '_')}.pdf`);
+    downloadReceiptPDF(billObj, settings, false);
   };
 
   // WhatsApp formatted billing text share
