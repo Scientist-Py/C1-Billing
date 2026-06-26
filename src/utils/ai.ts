@@ -45,18 +45,9 @@ To keep it unique and different every time, use this randomization token: "${ran
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout
 
-  // Route requests via Vite dev server proxy on localhost/local network to bypass browser CORS policies
-  const host = window.location.hostname;
-  const isLocalEnv = host === 'localhost' || 
-                     host === '127.0.0.1' || 
-                     host.startsWith('192.168.') || 
-                     host.startsWith('10.') || 
-                     host.startsWith('172.') || 
-                     host.endsWith('.local');
-                     
-  const url = isLocalEnv 
-    ? '/api-groq/openai/v1/chat/completions' 
-    : 'https://api.groq.com/openai/v1/chat/completions';
+  // Use proxy path to bypass CORS restrictions in the browser.
+  // The proxy is handled by Vite proxy in development and vercel.json rewrites in production.
+  const url = '/api-groq/openai/v1/chat/completions';
 
   try {
     const response = await fetch(url, {
@@ -211,17 +202,8 @@ Writing Guidelines:
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
 
-  const host = window.location.hostname;
-  const isLocalEnv = host === 'localhost' || 
-                     host === '127.0.0.1' || 
-                     host.startsWith('192.168.') || 
-                     host.startsWith('10.') || 
-                     host.startsWith('172.') || 
-                     host.endsWith('.local');
-                     
-  const url = isLocalEnv 
-    ? '/api-groq/openai/v1/chat/completions' 
-    : 'https://api.groq.com/openai/v1/chat/completions';
+  // Use proxy path to bypass CORS restrictions in the browser.
+  const url = '/api-groq/openai/v1/chat/completions';
 
   try {
     const response = await fetch(url, {
