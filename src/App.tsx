@@ -81,6 +81,62 @@ function App() {
     };
   }, [currentUser, isAutoLocked]);
 
+  // Listen to browser window/tab close to automatically trigger Google Sheet logout sync
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleWindowClose = () => {
+      const sessionId = localStorage.getItem('pos_session_id');
+      const loginTimeStr = localStorage.getItem('pos_session_start');
+      if (!sessionId) return;
+
+      let durationMinutes = 0;
+      if (loginTimeStr) {
+        const loginTime = new Date(loginTimeStr);
+        const durationMs = new Date().getTime() - loginTime.getTime();
+        durationMinutes = Math.max(0, Math.round(durationMs / 60000));
+      }
+
+      const logoutTime = new Date().toISOString();
+
+      saveAuditLog(currentUser.id, currentUser.username, 'LOGOUT_BROWSER_CLOSE', 'User closed the browser/tab');
+
+      // Sync staff logout to Google Sheets using a keepalive request
+      if (settings?.googleSheetsUrl) {
+        fetch(settings.googleSheetsUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: 'STAFF_LOGOUT',
+            payload: {
+              sessionId,
+              userId: currentUser.id,
+              username: currentUser.username,
+              logoutTime,
+              durationMinutes
+            }
+          }),
+          keepalive: true
+        }).catch((err) => {
+          console.warn('Browser close Google Sheets sync failed:', err);
+        });
+      }
+
+      // Clear session from localStorage
+      localStorage.removeItem('pos_session_id');
+      localStorage.removeItem('pos_session_start');
+    };
+
+    window.addEventListener('beforeunload', handleWindowClose);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleWindowClose);
+    };
+  }, [currentUser, settings]);
+
   // Update selected customer details live when active customers list reloads
   useEffect(() => {
     if (selectedCustomerId) {

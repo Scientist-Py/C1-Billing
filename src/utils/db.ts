@@ -589,7 +589,8 @@ export const syncToGoogleSheets = async (action: string, payload: any): Promise<
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ action, payload })
+      body: JSON.stringify({ action, payload }),
+      keepalive: true
     }).catch((err) => {
       console.warn('Google Sheets background sync failed:', err);
     });
