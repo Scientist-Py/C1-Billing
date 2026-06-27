@@ -103,14 +103,14 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="h-20 bg-white border-b border-apple-gray-100 flex items-center justify-between px-8 fixed top-0 right-0 left-64 z-15 select-none">
+    <header className="h-20 bg-white border-b border-apple-gray-100 flex items-center justify-between px-8 fixed top-0 right-0 lg:left-64 left-20 z-15 select-none transition-all duration-300">
       {/* Title */}
       <div>
         <h2 className="text-xl font-semibold text-apple-gray-800 tracking-tight capitalize">{title}</h2>
       </div>
 
       {/* Global Search Bar */}
-      <div className="relative w-96" ref={searchRef}>
+      <div className="relative lg:w-96 md:w-64 w-48" ref={searchRef}>
         <div className="relative">
           <Search className="w-4 h-4 text-apple-gray-300 absolute left-4 top-1/2 -translate-y-1/2" />
           <input
@@ -236,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Date-Time & Quick Actions */}
       <div className="flex items-center gap-6">
         {/* Live Date/Time widget */}
-        <div className="flex items-center gap-4 text-xs text-apple-gray-300 font-medium">
+        <div className="hidden sm:flex items-center gap-4 text-xs text-apple-gray-300 font-medium">
           <div className="flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-apple-gray-300" />
             <span>

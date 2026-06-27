@@ -17,8 +17,33 @@ export const initDB = (): Promise<IDBDatabase> => {
     };
 
     request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(request.result);
+      const db = request.result;
+      dbInstance = db;
+
+      // Run one-time migration/purge for a fresh system reset (v2)
+      if (typeof window !== 'undefined' && !localStorage.getItem('pos_fresh_system_reset_v2')) {
+        try {
+          const transaction = db.transaction(['bills', 'customers', 'auditLogs'], 'readwrite');
+          transaction.objectStore('bills').clear();
+          transaction.objectStore('customers').clear();
+          transaction.objectStore('auditLogs').clear();
+          
+          transaction.oncomplete = () => {
+            localStorage.setItem('pos_fresh_system_reset_v2', 'true');
+            console.log('POS system reset: cleared all test bills and transactions.');
+            resolve(db);
+          };
+          transaction.onerror = () => {
+            console.error('Failed to clear stores:', transaction.error);
+            resolve(db);
+          };
+        } catch (err) {
+          console.error('Failed to perform system reset:', err);
+          resolve(db);
+        }
+      } else {
+        resolve(db);
+      }
     };
 
     request.onupgradeneeded = () => {

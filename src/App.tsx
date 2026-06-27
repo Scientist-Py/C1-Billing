@@ -447,7 +447,7 @@ function App() {
       />
 
       {/* Main Page Area */}
-      <main className="pl-64 pt-20 min-h-screen">
+      <main className="lg:pl-64 pl-20 pt-20 min-h-screen transition-all duration-300">
         <div className="p-8 max-w-7xl mx-auto">
           {/* Subview Customer Details Router */}
           {selectedCustomerId && selectedCustomer ? (
