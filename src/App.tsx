@@ -15,7 +15,7 @@ import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
 import { generateWelcomeGreeting, speakText } from './utils/ai';
-import { ShieldAlert, Terminal, Play } from 'lucide-react';
+import { ShieldAlert, Play, Laptop } from 'lucide-react';
 
 const checkIsWindows = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -28,6 +28,7 @@ const IS_WINDOWS_DEVICE = checkIsWindows();
 
 const AccessDeniedScreen = () => {
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState('');
 
   const getDeviceName = (): string => {
     const ua = window.navigator.userAgent;
@@ -39,13 +40,10 @@ const AccessDeniedScreen = () => {
     return 'unauthorized device';
   };
 
-  const deviceName = getDeviceName();
-  const warningText = `This billing system you are trying to run on ${deviceName} like Android or iPhone or anywhere is prohibited. Please contact the administration for access.`;
-
-  const speakWarning = () => {
+  const speakWarning = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(warningText);
+      const utterance = new SpeechSynthesisUtterance(text);
       const voices = window.speechSynthesis.getVoices();
       
       const voice = voices.find(v => 
@@ -56,23 +54,35 @@ const AccessDeniedScreen = () => {
       if (voice) {
         utterance.voice = voice;
       }
-      utterance.rate = 0.92;
-      utterance.pitch = 0.85;
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
   };
 
   useEffect(() => {
-    speakWarning();
+    const deviceName = getDeviceName();
+    const messages = [
+      `Access restricted. This billing terminal is owned by Tushar Chauhan and permission is denied. If you are the right user, please ask Mr. Chauhan for access.`,
+      `Unauthorized connection. This POS system is owned by Tushar Chauhan. To run on this ${deviceName}, please contact Mr. Chauhan to request access clearance.`,
+      `Access denied. This billing portal is owned by Tushar Chauhan. If you are the authorized operator, ask Mr. Chauhan for system permissions.`,
+      `Connection blocked. This terminal network is owned by Tushar Chauhan. Please consult Mr. Chauhan for authorization to access this POS console.`,
+      `Device not allowed. This secure database console is owned by Tushar Chauhan. Access is restricted to Windows POS systems. Ask Mr. Chauhan for permissions.`
+    ];
+    
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    const chosenText = messages[randomIndex];
+    setSelectedMessage(chosenText);
+    speakWarning(chosenText);
 
     if ('speechSynthesis' in window) {
       window.speechSynthesis.onvoiceschanged = () => {
-        speakWarning();
+        speakWarning(chosenText);
       };
     }
 
     const handleGlobalClick = () => {
-      speakWarning();
+      speakWarning(chosenText);
       setHasInteracted(true);
       window.removeEventListener('click', handleGlobalClick);
       window.removeEventListener('touchstart', handleGlobalClick);
@@ -88,77 +98,60 @@ const AccessDeniedScreen = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-[#060608] flex flex-col items-center justify-center p-6 text-white font-mono select-none z-50 overflow-hidden">
-      {/* Scanning laser line effect */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[size:100%_4px,3px_100%] pointer-events-none z-20" />
-      <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500/20 shadow-[0_0_20px_#ef4444] animate-scanline pointer-events-none z-20" />
-      
-      {/* Decorative ambient background glows */}
-      <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-red-950/15 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-red-900/10 rounded-full blur-[140px] pointer-events-none" />
+    <div className="fixed inset-0 bg-[#0d0d11] flex flex-col items-center justify-center p-6 text-white font-sans select-none z-50 overflow-hidden">
+      {/* Premium ambient color blobs in background */}
+      <div className="absolute top-1/10 left-1/10 w-[450px] h-[450px] bg-[#5c3d2e]/15 rounded-full blur-[130px] pointer-events-none animate-pulse animate-duration-[8000ms]" />
+      <div className="absolute bottom-1/10 right-1/10 w-[450px] h-[450px] bg-amber-600/10 rounded-full blur-[130px] pointer-events-none animate-pulse animate-duration-[6000ms]" />
 
-      <div className="w-full max-w-md p-8 border border-red-500/25 bg-[#0f0f12]/80 backdrop-blur-2xl rounded-2xl shadow-[0_0_40px_rgba(239,68,68,0.15)] relative z-10 space-y-6 flex flex-col items-center">
+      {/* Glassmorphic Container Panel */}
+      <div className="w-full max-w-md p-8 border border-white/10 bg-white/5 backdrop-blur-3xl rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.4)] relative z-10 space-y-6 flex flex-col items-center">
         
-        {/* Hacker Alert Shield Logo */}
-        <div className="w-20 h-20 rounded-2xl bg-red-950/50 border border-red-500/40 flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)] animate-pulse">
-          <ShieldAlert className="w-10 h-10" />
+        {/* Soft Glowing Circle with Lock Icon */}
+        <div className="w-18 h-18 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-pulse">
+          <ShieldAlert className="w-9 h-9" />
         </div>
 
         <div className="text-center space-y-2">
-          <h2 className="text-red-500 text-lg font-bold tracking-widest uppercase flex items-center justify-center gap-2">
-            <span>Security Warning</span>
+          <h2 className="text-[#f5f5f7] text-xl font-bold tracking-tight">
+            System Locked
           </h2>
-          <p className="text-[11px] text-[#86868b] font-light leading-relaxed">
-            This digital billing console is restricted to authorized Chapter One POS terminals only.
+          <p className="text-xs text-[#86868b] leading-relaxed max-w-xs mx-auto">
+            This POS console is restricted to authorized Windows terminal workstations.
           </p>
         </div>
 
-        {/* Console Terminal Screen */}
-        <div className="w-full bg-black/90 rounded-xl p-4.5 border border-red-500/15 space-y-3.5 text-xs text-red-400 font-mono relative overflow-hidden shadow-inner">
-          <div className="flex items-center justify-between text-[9px] text-red-500/50 uppercase border-b border-red-500/10 pb-2">
-            <div className="flex items-center gap-1.5">
-              <Terminal className="w-3.5 h-3.5" />
-              <span>terminal_shield_v1.0.8</span>
-            </div>
-            <span className="animate-pulse">● online</span>
-          </div>
-
-          <div className="space-y-1.5 text-[10px] leading-relaxed">
-            <div className="flex justify-between">
-              <span className="text-red-500/60">[REQUEST_PLATFORM]</span>
-              <span className="font-semibold">{deviceName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-red-500/60">[ACCESS_STATUS]</span>
-              <span className="font-bold text-red-500 animate-pulse">PROHIBITED</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-red-500/60">[POLICY_ENFORCED]</span>
-              <span>WINDOWS_ONLY</span>
-            </div>
-          </div>
-          
-          <div className="text-[9px] text-red-500/40 leading-relaxed font-light border-t border-red-500/10 pt-2 text-center">
-            EXCEPTION TRIGGERED: UNAUTHORIZED_OS
-          </div>
+        {/* Glass Box displaying the dynamically picked message */}
+        <div className="w-full p-5 bg-white/5 rounded-2xl border border-white/10 text-xs text-[#d2d2d7] leading-relaxed text-center font-normal shadow-inner relative">
+          <span className="text-[#f5f5f7] font-medium block mb-2 text-[10px] tracking-wider uppercase opacity-40">
+            Security Notice
+          </span>
+          "{selectedMessage}"
         </div>
 
-        {/* Autoplay / Gesture Fallback Button */}
+        {/* Detailed diagnostic badge */}
+        <div className="flex items-center gap-2 px-3.5 py-1.5 bg-white/5 border border-white/10 rounded-full text-[10px] text-[#86868b]">
+          <Laptop className="w-3.5 h-3.5 text-[#86868b]" />
+          <span>Restricted Platform: <strong className="text-amber-400 font-semibold">{getDeviceName()}</strong></span>
+        </div>
+
+        {/* Autoplay Voice Trigger Action (Glass Button) */}
         {!hasInteracted && (
           <button 
             onClick={() => {
-              speakWarning();
+              if (selectedMessage) {
+                speakWarning(selectedMessage);
+              }
               setHasInteracted(true);
             }}
-            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-red-950/60 hover:bg-red-900/60 text-red-400 font-bold border border-red-500/35 rounded-xl transition-all text-xs cursor-pointer shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold border border-amber-500/30 rounded-xl transition-all text-xs cursor-pointer shadow-md"
           >
-            <Play className="w-3.5 h-3.5 fill-red-400" />
-            <span>INITIALIZE SECURITY AUDIBLE</span>
+            <Play className="w-3 h-3 fill-amber-300" />
+            <span>PLAY SYSTEM AUDIBLE</span>
           </button>
         )}
 
-        <div className="text-center text-[10px] text-red-500/60 leading-relaxed font-light mt-2 animate-pulse">
-          IP log captured. Administrator has been notified.
+        <div className="text-[10px] text-[#86868b] leading-relaxed font-light mt-1 text-center">
+          Please contact Tushar Chauhan for POS access keys.
         </div>
 
       </div>
