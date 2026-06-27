@@ -15,6 +15,7 @@ import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
 import { generateWelcomeGreeting, speakText } from './utils/ai';
+import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Play, Laptop } from 'lucide-react';
 
 const checkIsWindows = (): boolean => {
@@ -398,11 +399,13 @@ function App() {
     setCheckoutCustomer(null);
     setSelectedCustomerId(null);
     await reloadActiveCustomers();
+    playPaymentSound(); // Play payment success sound
   };
 
   const handleNewCustomerSuccess = async () => {
     setIsNewCustomerOpen(false);
     await reloadActiveCustomers();
+    playEntrySound(); // Play entry chime sound
     setTab('active'); // Switch to active customer list
   };
 
