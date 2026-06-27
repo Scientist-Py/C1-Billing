@@ -247,17 +247,16 @@ export const generateWelcomeGreeting = async (
   apiKey: string
 ): Promise<string> => {
   if (!apiKey || apiKey.trim().length === 0) {
-    return `Welcome back, ${username}! Let's make today another wonderful and productive shift.`;
+    return `Welcome back, ${username}! Wishing you an excellent shift.`;
   }
 
   const randomSeed = Math.random().toString(36).substring(7);
-  const systemPrompt = `You are the digital voice manager of Chapter One Cafe. Write an inspiring, highly professional, sweet, and impressive welcome back greeting for our staff member "${username}" (role: "${role}").
+  const systemPrompt = `You are the digital voice manager of Chapter One Cafe. Write a brief, warm, professional, and impressive welcome back greeting for our staff member "${username}" (role: "${role}").
   Guidelines:
-  1. The greeting must be professional, warm, sweet, and motivating.
-  2. Keep it short and sweet (approx 12-16 words, exactly 1 short sentence) so it is quick and pleasant to speak.
-  3. Encourage them or wish them a fantastic day/shift.
-  4. Use the random key "${randomSeed}" to ensure the phrasing is unique and different every time.
-  5. Do not output any quotes, system notes, or introductory text. Output ONLY the greeting text itself.`;
+  1. Keep it short (max 10-14 words, 1 short sentence) so it is clean to speak.
+  2. Include a welcoming back message and positive shift wishes.
+  3. Make it unique and different. Use the random key "${randomSeed}" for variation.
+  4. Do not output any quotes or system text. Output ONLY the greeting itself.`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 seconds timeout
@@ -286,7 +285,7 @@ export const generateWelcomeGreeting = async (
   } catch (err) {
     clearTimeout(timeoutId);
     console.warn("Failed to generate AI greeting, using fallback:", err);
-    return `Welcome back, ${username}! Let's make today another wonderful and productive shift.`;
+    return `Welcome back, ${username}! Wishing you an excellent shift.`;
   }
 };
 
@@ -315,25 +314,16 @@ const getBestVoice = (): Promise<SpeechSynthesisVoice | null> => {
 const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null => {
   if (!voices || voices.length === 0) return null;
   
-  // 1. Look for English (India) Heera Natural voice (sweet Indian English female)
-  const heeraVoice = voices.find(v => 
-    v.lang.replace('_', '-').toLowerCase().includes('en-in') && 
-    (v.name.includes('Heera') || v.name.includes('Natural') || v.name.includes('Online'))
+  // 1. Prioritize Microsoft Edge Female Online (Natural) voices (e.g. Aria, Jenny, Michelle)
+  const edgeFemale = voices.find(v => 
+    v.lang.startsWith('en') && 
+    v.name.includes('Online') && 
+    v.name.includes('Natural') &&
+    (v.name.includes('Aria') || v.name.includes('Jenny') || v.name.includes('Michelle') || v.name.toLowerCase().includes('female'))
   );
-  if (heeraVoice) return heeraVoice;
+  if (edgeFemale) return edgeFemale;
 
-  // 2. Look for any English (India) female voice
-  const indianFemaleVoice = voices.find(v => 
-    v.lang.replace('_', '-').toLowerCase().includes('en-in') && 
-    (v.name.includes('Google') || v.name.includes('Female') || (!v.name.includes('David') && !v.name.includes('Guy') && !v.name.includes('Ravi')))
-  );
-  if (indianFemaleVoice) return indianFemaleVoice;
-
-  // 3. Look for any English (India) voice
-  const indianVoice = voices.find(v => v.lang.replace('_', '-').toLowerCase().includes('en-in'));
-  if (indianVoice) return indianVoice;
-
-  // 4. Look for English Edge Online (Natural) premium neural voices
+  // 2. Any English Edge Online (Natural) premium neural voice
   const edgeVoice = voices.find(v => 
     v.lang.startsWith('en') && 
     v.name.includes('Online') && 
@@ -341,21 +331,29 @@ const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | nul
   );
   if (edgeVoice) return edgeVoice;
 
-  // 5. Look for any English Microsoft Neural/Natural voice
+  // 3. Look for any English Microsoft Female voice
+  const microsoftFemale = voices.find(v => 
+    v.lang.startsWith('en') && 
+    v.name.includes('Microsoft') &&
+    (v.name.includes('Zira') || v.name.toLowerCase().includes('female'))
+  );
+  if (microsoftFemale) return microsoftFemale;
+
+  // 4. Look for any English Microsoft Neural/Natural voice
   const microsoftVoice = voices.find(v => 
     v.lang.startsWith('en') && 
     (v.name.includes('Microsoft') || v.name.includes('Neural') || v.name.includes('Natural'))
   );
   if (microsoftVoice) return microsoftVoice;
 
-  // 6. Look for any English Google voice
+  // 5. Look for any English Google voice (like Google US English which is typically female)
   const googleVoice = voices.find(v => 
     v.lang.startsWith('en') && 
     v.name.includes('Google')
   );
   if (googleVoice) return googleVoice;
 
-  // 7. Fallback to any English voice
+  // 6. Fallback to any English voice
   const enVoice = voices.find(v => v.lang.startsWith('en'));
   if (enVoice) return enVoice;
 
@@ -366,6 +364,7 @@ const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | nul
  * Call Gemini 2.0 Flash Audio API to generate high-fidelity neural speech audio.
  */
 export const generateGeminiAudio = async (text: string, apiKey: string): Promise<string> => {
+  // Use gemini-2.0-flash model which has built-in audio modality support
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`;
   
   const response = await fetch(url, {
@@ -388,7 +387,7 @@ export const generateGeminiAudio = async (text: string, apiKey: string): Promise
         speech_config: {
           voice_config: {
             prebuilt_voice_config: {
-              voice_name: "Aoede"
+              voice_name: "Aoede" // Highly expressive neural voice: Aoede, Puck, Charon, Fenrir, Kore
             }
           }
         }
@@ -403,6 +402,7 @@ export const generateGeminiAudio = async (text: string, apiKey: string): Promise
   const result = await response.json();
   const parts = result.candidates?.[0]?.content?.parts || [];
   
+  // Robust check for both camelCase and snake_case properties returned by API
   const part = parts.find((p: any) => p.inlineData || p.inline_data);
   if (!part) {
     throw new Error('No audio part found in Gemini API response');
@@ -412,10 +412,10 @@ export const generateGeminiAudio = async (text: string, apiKey: string): Promise
     throw new Error('No audio base64 data found in Gemini API response');
   }
 
-  return inline.data;
+  return inline.data; // Return base64 encoded audio string
 };
 
-export const playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
+const playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
   const binaryString = window.atob(base64Data);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -431,10 +431,10 @@ export const playBase64Audio = (base64Data: string, mimeType: string = 'audio/og
 };
 
 /**
- * Text-to-Speech (TTS) using Gemini Neural Audio API (primary female voice) with Web Speech API (fallback).
+ * Text-to-Speech (TTS) using Gemini Neural Audio API (primary) with Web Speech API (fallback).
  */
 export const speakText = async (text: string, geminiApiKey?: string) => {
-  // Try to use Gemini Neural Voice API first (using female voice Aoede) if key is provided
+  // Try to use Gemini Neural Voice API first if key is provided
   if (geminiApiKey && geminiApiKey.trim().length > 0) {
     try {
       const base64Audio = await generateGeminiAudio(text, geminiApiKey);
@@ -445,21 +445,19 @@ export const speakText = async (text: string, geminiApiKey?: string) => {
     }
   }
 
-  // Fallback to browser standard SpeechSynthesis
+  // Fallback to browser standard SpeechSynthesis (Edge TTS)
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.resume();
     window.speechSynthesis.cancel();
 
     const voice = await getBestVoice();
 
-    // Small delay to allow clean reset in Chrome
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
       if (voice) {
         utterance.voice = voice;
       }
-      utterance.rate = 0.95;  // Clear, natural rate
-      utterance.pitch = 1.05; // Slightly higher pitch for sweet/sexy voice
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }, 150);
   } else {
