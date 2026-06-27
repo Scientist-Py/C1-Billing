@@ -15,7 +15,7 @@ import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
 import { generateWelcomeGreeting, speakText } from './utils/ai';
-import { AccessDenied } from './components/AccessDenied';
+import { ShieldAlert, Terminal, Play } from 'lucide-react';
 
 const checkIsWindows = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -25,6 +25,146 @@ const checkIsWindows = (): boolean => {
 };
 
 const IS_WINDOWS_DEVICE = checkIsWindows();
+
+const AccessDeniedScreen = () => {
+  const [hasInteracted, setHasInteracted] = useState(false);
+
+  const getDeviceName = (): string => {
+    const ua = window.navigator.userAgent;
+    if (/Android/i.test(ua)) return 'Android device';
+    if (/iPhone/i.test(ua)) return 'iPhone';
+    if (/iPad/i.test(ua)) return 'iPad';
+    if (/Macintosh/i.test(ua)) return 'Mac computer';
+    if (/Linux/i.test(ua)) return 'Linux machine';
+    return 'unauthorized device';
+  };
+
+  const deviceName = getDeviceName();
+  const warningText = `This billing system you are trying to run on ${deviceName} like Android or iPhone or anywhere is prohibited. Please contact the administration for access.`;
+
+  const speakWarning = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(warningText);
+      const voices = window.speechSynthesis.getVoices();
+      
+      const voice = voices.find(v => 
+        v.lang.startsWith('en') && 
+        (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      
+      if (voice) {
+        utterance.voice = voice;
+      }
+      utterance.rate = 0.92;
+      utterance.pitch = 0.85;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  useEffect(() => {
+    speakWarning();
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        speakWarning();
+      };
+    }
+
+    const handleGlobalClick = () => {
+      speakWarning();
+      setHasInteracted(true);
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('touchstart', handleGlobalClick);
+    };
+
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('touchstart', handleGlobalClick);
+
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('touchstart', handleGlobalClick);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-[#060608] flex flex-col items-center justify-center p-6 text-white font-mono select-none z-50 overflow-hidden">
+      {/* Scanning laser line effect */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[size:100%_4px,3px_100%] pointer-events-none z-20" />
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500/20 shadow-[0_0_20px_#ef4444] animate-scanline pointer-events-none z-20" />
+      
+      {/* Decorative ambient background glows */}
+      <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-red-950/15 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-red-900/10 rounded-full blur-[140px] pointer-events-none" />
+
+      <div className="w-full max-w-md p-8 border border-red-500/25 bg-[#0f0f12]/80 backdrop-blur-2xl rounded-2xl shadow-[0_0_40px_rgba(239,68,68,0.15)] relative z-10 space-y-6 flex flex-col items-center">
+        
+        {/* Hacker Alert Shield Logo */}
+        <div className="w-20 h-20 rounded-2xl bg-red-950/50 border border-red-500/40 flex items-center justify-center text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)] animate-pulse">
+          <ShieldAlert className="w-10 h-10" />
+        </div>
+
+        <div className="text-center space-y-2">
+          <h2 className="text-red-500 text-lg font-bold tracking-widest uppercase flex items-center justify-center gap-2">
+            <span>Security Warning</span>
+          </h2>
+          <p className="text-[11px] text-[#86868b] font-light leading-relaxed">
+            This digital billing console is restricted to authorized Chapter One POS terminals only.
+          </p>
+        </div>
+
+        {/* Console Terminal Screen */}
+        <div className="w-full bg-black/90 rounded-xl p-4.5 border border-red-500/15 space-y-3.5 text-xs text-red-400 font-mono relative overflow-hidden shadow-inner">
+          <div className="flex items-center justify-between text-[9px] text-red-500/50 uppercase border-b border-red-500/10 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5" />
+              <span>terminal_shield_v1.0.8</span>
+            </div>
+            <span className="animate-pulse">● online</span>
+          </div>
+
+          <div className="space-y-1.5 text-[10px] leading-relaxed">
+            <div className="flex justify-between">
+              <span className="text-red-500/60">[REQUEST_PLATFORM]</span>
+              <span className="font-semibold">{deviceName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-red-500/60">[ACCESS_STATUS]</span>
+              <span className="font-bold text-red-500 animate-pulse">PROHIBITED</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-red-500/60">[POLICY_ENFORCED]</span>
+              <span>WINDOWS_ONLY</span>
+            </div>
+          </div>
+          
+          <div className="text-[9px] text-red-500/40 leading-relaxed font-light border-t border-red-500/10 pt-2 text-center">
+            EXCEPTION TRIGGERED: UNAUTHORIZED_OS
+          </div>
+        </div>
+
+        {/* Autoplay / Gesture Fallback Button */}
+        {!hasInteracted && (
+          <button 
+            onClick={() => {
+              speakWarning();
+              setHasInteracted(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-red-950/60 hover:bg-red-900/60 text-red-400 font-bold border border-red-500/35 rounded-xl transition-all text-xs cursor-pointer shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+          >
+            <Play className="w-3.5 h-3.5 fill-red-400" />
+            <span>INITIALIZE SECURITY AUDIBLE</span>
+          </button>
+        )}
+
+        <div className="text-center text-[10px] text-red-500/60 leading-relaxed font-light mt-2 animate-pulse">
+          IP log captured. Administrator has been notified.
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -269,7 +409,7 @@ function App() {
   };
 
   if (!IS_WINDOWS_DEVICE) {
-    return <AccessDenied />;
+    return <AccessDeniedScreen />;
   }
 
   if (!settings) {

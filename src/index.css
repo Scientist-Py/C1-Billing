@@ -18,6 +18,7 @@
   --animate-fade-in: fade-in 0.2s ease-out;
   --animate-scale-up: scale-up 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   --animate-slide-in: slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scanline: scanline 6s linear infinite;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -30,6 +31,10 @@
   @keyframes slide-in {
     from { transform: translateX(100%); }
     to { transform: translateX(0); }
+  }
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
   }
 }
 
