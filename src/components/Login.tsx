@@ -43,6 +43,24 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Support physical keyboard entry for pin digits and backspace
+  useEffect(() => {
+    if (viewState !== 'password-entry' || !selectedUser) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) {
+        handleKeyPress(e.key);
+      } else if (e.key === 'Backspace') {
+        handleBackspace();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewState, selectedUser, password]);
+
   const handleKeyPress = (digit: string) => {
     setError(null);
     if (!selectedUser) return;

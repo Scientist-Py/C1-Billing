@@ -237,3 +237,88 @@ Writing Guidelines:
     throw err;
   }
 };
+
+/**
+ * Generates a warm, professional welcome greeting using Groq API.
+ */
+export const generateWelcomeGreeting = async (
+  username: string,
+  role: string,
+  apiKey: string
+): Promise<string> => {
+  if (!apiKey || apiKey.trim().length === 0) {
+    return `Welcome back, ${username}! Wishing you an excellent shift.`;
+  }
+
+  const systemPrompt = `You are the digital voice manager of Chapter One Cafe. Write a very brief, professional, warm, and highly impressive welcome back greeting for our staff member "${username}" (role: "${role}").
+  Guidelines:
+  1. The greeting must be professional, motivational, and impressive.
+  2. Keep it very short (max 12-18 words, 1-2 short sentences) so it's quick and clean to speak.
+  3. Include a warm greeting.
+  4. Do not output any quotes or system text. Output ONLY the greeting itself.`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5 seconds timeout
+
+  try {
+    const response = await fetch('/api-groq/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Greet the user "${username}" (role: "${role}")` }
+        ],
+        temperature: 0.8
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn("Failed to generate AI greeting, using fallback:", err);
+    return `Welcome back, ${username}! Wishing you an excellent and productive shift.`;
+  }
+};
+
+/**
+ * Text-to-Speech (TTS) using Web Speech API.
+ * Uses high-quality browser cloud/neural voices (like Edge premium neural voices) if available.
+ */
+export const speakText = (text: string) => {
+  if ('speechSynthesis' in window) {
+    // Cancel any current speaking activity
+    window.speechSynthesis.cancel();
+
+    // Small delay to ensure clean audio transition
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Select the best voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(v => 
+        v.lang.startsWith('en') && 
+        (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.rate = 0.95; // Clear pronunciation rate
+      utterance.pitch = 1.0;
+      
+      window.speechSynthesis.speak(utterance);
+    }, 100);
+  } else {
+    console.warn('Speech synthesis is not supported in this browser.');
+  }
+};
+

@@ -51,6 +51,22 @@ export const AutoLockScreen: React.FC<AutoLockScreenProps> = ({
     setPin(prev => prev.slice(0, -1));
   };
 
+  // Support physical keyboard entry for pin digits and backspace
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (/^[0-9]$/.test(e.key)) {
+        handleKeyPress(e.key);
+      } else if (e.key === 'Backspace') {
+        handleBackspace();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [pin, currentUser]);
+
   return (
     <div className="fixed inset-0 z-50 bg-[#1d1d1f]/80 backdrop-blur-2xl flex flex-col justify-between p-8 select-none animate-fade-in text-white">
       {/* Top Status */}

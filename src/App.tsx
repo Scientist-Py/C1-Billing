@@ -14,6 +14,7 @@ import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
+import { generateWelcomeGreeting, speakText } from './utils/ai';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -179,6 +180,17 @@ function App() {
       date: dateStr,
       loginTime
     });
+
+    // Trigger dynamic AI Voice greeting in background (non-blocking)
+    (async () => {
+      try {
+        const apiKey = settings?.groqApiKey || '';
+        const greeting = await generateWelcomeGreeting(user.username, user.role, apiKey);
+        speakText(greeting);
+      } catch (err) {
+        console.warn('Voice welcome failed:', err);
+      }
+    })();
   };
 
   const handleLogout = async () => {
