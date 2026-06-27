@@ -42,21 +42,26 @@ const AccessDeniedScreen = () => {
 
   const speakWarning = (text: string) => {
     if ('speechSynthesis' in window) {
+      window.speechSynthesis.resume();
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices();
-      
-      const voice = voices.find(v => 
-        v.lang.startsWith('en') && 
-        (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-      
-      if (voice) {
-        utterance.voice = voice;
-      }
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+
+      // Delay to let cancel clear the queue asynchronously in Chrome
+      setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = window.speechSynthesis.getVoices();
+        
+        const voice = voices.find(v => 
+          v.lang.startsWith('en') && 
+          (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
+        ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+        
+        if (voice) {
+          utterance.voice = voice;
+        }
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }, 150);
     }
   };
 
