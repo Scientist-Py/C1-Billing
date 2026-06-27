@@ -247,18 +247,20 @@ export const generateWelcomeGreeting = async (
   apiKey: string
 ): Promise<string> => {
   if (!apiKey || apiKey.trim().length === 0) {
-    return `Welcome back, ${username}! Wishing you an excellent shift.`;
+    return `Welcome back, ${username}! Wishing you an excellent and productive shift today. Let's make it another great day at Chapter One Cafe!`;
   }
 
-  const systemPrompt = `You are the digital voice manager of Chapter One Cafe. Write a very brief, professional, warm, and highly impressive welcome back greeting for our staff member "${username}" (role: "${role}").
+  const randomSeed = Math.random().toString(36).substring(7);
+  const systemPrompt = `You are the digital voice manager of Chapter One Cafe. Write an inspiring, highly professional, warm, and impressive welcome back greeting for our staff member "${username}" (role: "${role}").
   Guidelines:
-  1. The greeting must be professional, motivational, and impressive.
-  2. Keep it very short (max 12-18 words, 1-2 short sentences) so it's quick and clean to speak.
-  3. Include a warm greeting.
-  4. Do not output any quotes or system text. Output ONLY the greeting itself.`;
+  1. The greeting must be professional, warm, motivating, and set a positive tone for their shift.
+  2. Make it a bit longer and detailed (approx 25-35 words, 2 short sentences) so it sounds like a natural, warm human welcome.
+  3. Encourage them to have a productive shift, comment on making today a great day, or express how glad we are to have them on shift.
+  4. Make it unique, different, and highly engaging. Do not use generic templates. Use the random key "${randomSeed}" as inspiration for variety.
+  5. Do not output any quotes, system notes, or introductory text. Output ONLY the greeting narrative itself.`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5 seconds timeout
+  const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 seconds timeout
 
   try {
     const response = await fetch('/api-groq/openai/v1/chat/completions', {
@@ -273,7 +275,7 @@ export const generateWelcomeGreeting = async (
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Greet the user "${username}" (role: "${role}")` }
         ],
-        temperature: 0.8
+        temperature: 0.85
       }),
       signal: controller.signal
     });
@@ -284,7 +286,7 @@ export const generateWelcomeGreeting = async (
   } catch (err) {
     clearTimeout(timeoutId);
     console.warn("Failed to generate AI greeting, using fallback:", err);
-    return `Welcome back, ${username}! Wishing you an excellent and productive shift.`;
+    return `Welcome back, ${username}! Wishing you an excellent and productive shift today. Let's make it another great day at Chapter One Cafe!`;
   }
 };
 
@@ -359,17 +361,17 @@ export const generateGeminiAudio = async (text: string, apiKey: string): Promise
         {
           parts: [
             {
-              text: `Read this welcoming text out loud in a warm, natural, friendly voice. Speak clearly: "${text}"`
+              text: `Read this welcoming text out loud in a warm, natural, highly expressive and friendly voice. Speak clearly: "${text}"`
             }
           ]
         }
       ],
       generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: "Kore" // High-quality warm voice: Aoede, Charon, Fenrir, Kore, Puck
+        response_modalities: ["audio"],
+        speech_config: {
+          voice_config: {
+            prebuilt_voice_config: {
+              voice_name: "Aoede" // Highly expressive neural voice: Aoede, Puck, Charon, Fenrir, Kore
             }
           }
         }
@@ -382,12 +384,19 @@ export const generateGeminiAudio = async (text: string, apiKey: string): Promise
   }
 
   const result = await response.json();
-  const part = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-  if (!part || !part.inlineData || !part.inlineData.data) {
-    throw new Error('No audio data found in Gemini API response');
+  const parts = result.candidates?.[0]?.content?.parts || [];
+  
+  // Robust check for both camelCase and snake_case properties returned by API
+  const part = parts.find((p: any) => p.inlineData || p.inline_data);
+  if (!part) {
+    throw new Error('No audio part found in Gemini API response');
+  }
+  const inline = part.inlineData || part.inline_data;
+  if (!inline || !inline.data) {
+    throw new Error('No audio base64 data found in Gemini API response');
   }
 
-  return part.inlineData.data; // Return base64 encoded audio string
+  return inline.data; // Return base64 encoded audio string
 };
 
 const playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
