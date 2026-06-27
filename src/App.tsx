@@ -15,7 +15,7 @@ import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
 import { generateWelcomeGreeting, speakText } from './utils/ai';
-import { MonitorOff } from 'lucide-react';
+import { AccessDenied } from './components/AccessDenied';
 
 const checkIsWindows = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -269,41 +269,7 @@ function App() {
   };
 
   if (!IS_WINDOWS_DEVICE) {
-    return (
-      <div className="fixed inset-0 bg-[#0c0c0d] flex flex-col items-center justify-center p-6 text-white font-sans select-none z-50">
-        {/* Decorative ambient background glows */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-[#5c3d2e]/10 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-orange-950/10 rounded-full blur-[120px] pointer-events-none" />
-
-        <div className="apple-card max-w-md w-full p-8 text-center space-y-6 border border-[#2c2c2e]/60 bg-[#1c1c1e]/60 backdrop-blur-xl relative z-10">
-          <div className="w-16 h-16 mx-auto rounded-full bg-red-950/40 border border-red-500/30 flex items-center justify-center text-red-400 animate-pulse">
-            <MonitorOff className="w-8 h-8" />
-          </div>
-          
-          <div className="space-y-2">
-            <h3 className="text-lg font-bold text-[#f5f5f7]">Access Restricted</h3>
-            <p className="text-xs text-[#86868b] leading-relaxed">
-              This terminal billing console is strictly restricted to authorized Chapter One Cafe Windows POS machines.
-            </p>
-          </div>
-
-          <div className="p-4 bg-[#2c2c2e]/30 rounded-xl text-[10px] text-[#86868b] text-left font-mono border border-[#2c2c2e]/50">
-            <div className="flex justify-between py-1 border-b border-[#2c2c2e]/30">
-              <span>Detected Platform:</span>
-              <span className="text-orange-400 font-semibold">{(window.navigator as any).platform || 'Unknown'}</span>
-            </div>
-            <div className="flex justify-between py-1 mt-1">
-              <span>Security Policy:</span>
-              <span className="text-red-400 font-semibold">WIN-ONLY_ENFORCED</span>
-            </div>
-          </div>
-
-          <p className="text-[10px] text-[#86868b] leading-relaxed font-light">
-            Please contact your system administrator if you believe this is an error.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   if (!settings) {
