@@ -20,8 +20,8 @@ export const initDB = (): Promise<IDBDatabase> => {
       const db = request.result;
       dbInstance = db;
 
-      // Run one-time migration/purge for a fresh system reset (v2)
-      if (typeof window !== 'undefined' && !localStorage.getItem('pos_fresh_system_reset_v2')) {
+      // Run one-time migration/purge for a fresh system reset (v3)
+      if (typeof window !== 'undefined' && !localStorage.getItem('pos_fresh_system_reset_v3')) {
         try {
           const transaction = db.transaction(['bills', 'customers', 'auditLogs'], 'readwrite');
           transaction.objectStore('bills').clear();
@@ -29,7 +29,7 @@ export const initDB = (): Promise<IDBDatabase> => {
           transaction.objectStore('auditLogs').clear();
           
           transaction.oncomplete = () => {
-            localStorage.setItem('pos_fresh_system_reset_v2', 'true');
+            localStorage.setItem('pos_fresh_system_reset_v3', 'true');
             console.log('POS system reset: cleared all test bills and transactions.');
             resolve(db);
           };
