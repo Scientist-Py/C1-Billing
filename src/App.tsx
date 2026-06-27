@@ -456,6 +456,7 @@ function App() {
         onSelectBill={handleSelectBill}
         setTab={setTab}
         currency={settings.currency}
+        currentUser={currentUser}
       />
 
       {/* Main Page Area */}

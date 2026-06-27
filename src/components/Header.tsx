@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Calendar, Clock, Users, Utensils, Receipt } from 'lucide-react';
-import type { Customer, Bill, MenuItem } from '../types';
+import type { Customer, Bill, MenuItem, User } from '../types';
 import { getActiveCustomers, getBills, getMenu } from '../utils/db';
 
 interface HeaderProps {
@@ -10,6 +10,7 @@ interface HeaderProps {
   onSelectBill: (bill: Bill) => void;
   setTab: (tab: string) => void;
   currency: string;
+  currentUser: User;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,7 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectCustomer,
   onSelectBill,
   setTab,
-  currency
+  currency,
+  currentUser
 }) => {
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,9 +47,16 @@ export const Header: React.FC<HeaderProps> = ({
   // Fetch data on focus/search
   const loadSearchData = async () => {
     try {
-      const active = await getActiveCustomers();
-      const pastBills = await getBills();
+      let active = await getActiveCustomers();
+      let pastBills = await getBills();
       const menuCatalog = await getMenu();
+
+      // Filter search datasets for active sessions and bills if staff profile
+      if (currentUser.role === 'staff') {
+        active = active.filter(c => c.cashierId === currentUser.id);
+        pastBills = pastBills.filter(b => b.cashierId === currentUser.id);
+      }
+
       setActiveCustomers(active);
       setBills(pastBills);
       setMenu(menuCatalog);
