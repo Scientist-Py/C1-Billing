@@ -288,35 +288,82 @@ export const generateWelcomeGreeting = async (
   }
 };
 
+const getBestVoice = (): Promise<SpeechSynthesisVoice | null> => {
+  return new Promise((resolve) => {
+    let voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      resolve(selectVoice(voices));
+      return;
+    }
+    
+    // Listen to voiceschanged if they are loaded asynchronously
+    const callback = () => {
+      const updatedVoices = window.speechSynthesis.getVoices();
+      resolve(selectVoice(updatedVoices));
+    };
+    window.speechSynthesis.onvoiceschanged = callback;
+    
+    // Safety fallback
+    setTimeout(() => {
+      resolve(selectVoice(window.speechSynthesis.getVoices()));
+    }, 800);
+  });
+};
+
+const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null => {
+  if (!voices || voices.length === 0) return null;
+  
+  // 1. Look for English Edge Online (Natural) premium neural voices
+  const edgeVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    v.name.includes('Online') && 
+    v.name.includes('Natural')
+  );
+  if (edgeVoice) return edgeVoice;
+
+  // 2. Look for any English Microsoft Neural/Natural voice
+  const microsoftVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    (v.name.includes('Microsoft') || v.name.includes('Neural') || v.name.includes('Natural'))
+  );
+  if (microsoftVoice) return microsoftVoice;
+
+  // 3. Look for any English Google voice
+  const googleVoice = voices.find(v => 
+    v.lang.startsWith('en') && 
+    v.name.includes('Google')
+  );
+  if (googleVoice) return googleVoice;
+
+  // 4. Fallback to any English voice
+  const enVoice = voices.find(v => v.lang.startsWith('en'));
+  if (enVoice) return enVoice;
+
+  return voices[0] || null;
+};
+
 /**
  * Text-to-Speech (TTS) using Web Speech API.
  * Uses high-quality browser cloud/neural voices (like Edge premium neural voices) if available.
  */
-export const speakText = (text: string) => {
+export const speakText = async (text: string) => {
   if ('speechSynthesis' in window) {
     // Cancel any current speaking activity
     window.speechSynthesis.cancel();
 
-    // Small delay to ensure clean audio transition
+    // Resolve the best voice asynchronously
+    const voice = await getBestVoice();
+
+    // Small delay to ensure speech engine resets cleanly
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Select the best voice
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => 
-        v.lang.startsWith('en') && 
-        (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
+      if (voice) {
+        utterance.voice = voice;
       }
-      
-      utterance.rate = 0.95; // Clear pronunciation rate
+      utterance.rate = 0.95; // Natural clear speed
       utterance.pitch = 1.0;
-      
       window.speechSynthesis.speak(utterance);
-    }, 100);
+    }, 150);
   } else {
     console.warn('Speech synthesis is not supported in this browser.');
   }
