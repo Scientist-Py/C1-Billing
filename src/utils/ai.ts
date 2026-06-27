@@ -365,7 +365,7 @@ const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | nul
 /**
  * Call Gemini 2.0 Flash Audio API to generate high-fidelity neural speech audio.
  */
-export const _generateGeminiAudio = async (text: string, apiKey: string): Promise<string> => {
+export const generateGeminiAudio = async (text: string, apiKey: string): Promise<string> => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`;
   
   const response = await fetch(url, {
@@ -415,7 +415,7 @@ export const _generateGeminiAudio = async (text: string, apiKey: string): Promis
   return inline.data;
 };
 
-export const _playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
+export const playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
   const binaryString = window.atob(base64Data);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -431,9 +431,21 @@ export const _playBase64Audio = (base64Data: string, mimeType: string = 'audio/o
 };
 
 /**
- * Text-to-Speech (TTS) using local sweet Indian English female voice (Heera) with high quality.
+ * Text-to-Speech (TTS) using Gemini Neural Audio API (primary female voice) with Web Speech API (fallback).
  */
-export const speakText = async (text: string, _geminiApiKey?: string) => {
+export const speakText = async (text: string, geminiApiKey?: string) => {
+  // Try to use Gemini Neural Voice API first (using female voice Aoede) if key is provided
+  if (geminiApiKey && geminiApiKey.trim().length > 0) {
+    try {
+      const base64Audio = await generateGeminiAudio(text, geminiApiKey);
+      playBase64Audio(base64Audio);
+      return; // Success!
+    } catch (err) {
+      console.warn("Gemini Audio generation failed, falling back to browser TTS:", err);
+    }
+  }
+
+  // Fallback to browser standard SpeechSynthesis
   if ('speechSynthesis' in window) {
     window.speechSynthesis.resume();
     window.speechSynthesis.cancel();
