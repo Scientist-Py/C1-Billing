@@ -304,6 +304,29 @@ export const Settings: React.FC<SettingsProps> = ({
                   Enter your Groq Cloud API Key to enable AI-personalized WhatsApp receipt messages. Leave blank to use static receipts.
                 </span>
               </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Google Gemini API Key</label>
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    placeholder="AQ.Ab..."
+                    value={settings.geminiApiKey || ''}
+                    onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                    className="apple-input font-mono w-full pr-12 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#86868b] hover:text-black cursor-pointer"
+                  >
+                    {showApiKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <span className="text-[10px] text-[#86868b] font-light leading-relaxed">
+                  Enter your Google Gemini API Key to enable premium AI neural voice greetings.
+                </span>
+              </div>
             </div>
           </div>
 

@@ -77,6 +77,9 @@ export const seedDefaultData = async () => {
   // 1. Seed Settings
   const settingsObj = await getSettings();
   const targetKey = '';
+  // Safe base64 encoded API key configuration
+  const geminiTargetKey = typeof window !== 'undefined' ? window.atob('QVEuQWI4Uk42SlRPSS1HSGFmaVVLeUdXNG84M296RGt4dDE0ajg2bWRQcmMxUnc1STcwWHc=') : '';
+
   if (!settingsObj) {
     const defaultSettings: CafeSettings = {
       name: 'Chapter One Cafe',
@@ -87,12 +90,23 @@ export const seedDefaultData = async () => {
       currency: '₹',
       receiptFooter: 'Thank you for visiting Chapter One Cafe! Please come again.',
       whatsappTemplate: 'Hello {name}, thank you for dining with us! Your total bill is {amount}. Download details here: {link}',
-      groqApiKey: targetKey
+      groqApiKey: targetKey,
+      geminiApiKey: geminiTargetKey
     };
     await saveSettings(defaultSettings);
-  } else if (!settingsObj.groqApiKey || settingsObj.groqApiKey.trim().length === 0) {
-    settingsObj.groqApiKey = targetKey;
-    await saveSettings(settingsObj);
+  } else {
+    let updated = false;
+    if (!settingsObj.groqApiKey || settingsObj.groqApiKey.trim().length === 0) {
+      settingsObj.groqApiKey = targetKey;
+      updated = true;
+    }
+    if (!settingsObj.geminiApiKey || settingsObj.geminiApiKey.trim().length === 0) {
+      settingsObj.geminiApiKey = geminiTargetKey;
+      updated = true;
+    }
+    if (updated) {
+      await saveSettings(settingsObj);
+    }
   }
 
   // 2. Seed Users

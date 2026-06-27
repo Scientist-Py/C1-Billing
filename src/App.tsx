@@ -185,8 +185,9 @@ function App() {
     (async () => {
       try {
         const apiKey = settings?.groqApiKey || '';
+        const geminiKey = settings?.geminiApiKey || '';
         const greeting = await generateWelcomeGreeting(user.username, user.role, apiKey);
-        speakText(greeting);
+        speakText(greeting, geminiKey);
       } catch (err) {
         console.warn('Voice welcome failed:', err);
       }

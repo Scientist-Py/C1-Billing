@@ -86,6 +86,7 @@ export interface CafeSettings {
   whatsappTemplate: string;
   googleSheetsUrl?: string;
   groqApiKey?: string;
+  geminiApiKey?: string;
 }
 
 export interface AuditLog {

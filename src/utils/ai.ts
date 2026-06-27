@@ -343,24 +343,95 @@ const selectVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | nul
 };
 
 /**
- * Text-to-Speech (TTS) using Web Speech API.
- * Uses high-quality browser cloud/neural voices (like Edge premium neural voices) if available.
+ * Call Gemini 2.0 Flash Audio API to generate high-fidelity neural speech audio.
  */
-export const speakText = async (text: string) => {
+export const generateGeminiAudio = async (text: string, apiKey: string): Promise<string> => {
+  // Use gemini-2.0-flash model which has built-in audio modality support
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: `Read this welcoming text out loud in a warm, natural, friendly voice. Speak clearly: "${text}"`
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: "Kore" // High-quality warm voice: Aoede, Charon, Fenrir, Kore, Puck
+            }
+          }
+        }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini Audio API returned HTTP ${response.status}`);
+  }
+
+  const result = await response.json();
+  const part = result.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+  if (!part || !part.inlineData || !part.inlineData.data) {
+    throw new Error('No audio data found in Gemini API response');
+  }
+
+  return part.inlineData.data; // Return base64 encoded audio string
+};
+
+const playBase64Audio = (base64Data: string, mimeType: string = 'audio/ogg; codecs=opus') => {
+  const binaryString = window.atob(base64Data);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  const audioUrl = URL.createObjectURL(blob);
+  const audio = new Audio(audioUrl);
+  audio.play().catch((e) => {
+    console.warn("Failed to play Gemini audio:", e);
+  });
+};
+
+/**
+ * Text-to-Speech (TTS) using Gemini Neural Audio API (primary) with Web Speech API (fallback).
+ */
+export const speakText = async (text: string, geminiApiKey?: string) => {
+  // Try to use Gemini Neural Voice API first if key is provided
+  if (geminiApiKey && geminiApiKey.trim().length > 0) {
+    try {
+      const base64Audio = await generateGeminiAudio(text, geminiApiKey);
+      playBase64Audio(base64Audio);
+      return; // Success!
+    } catch (err) {
+      console.warn("Gemini Audio generation failed, falling back to browser TTS:", err);
+    }
+  }
+
+  // Fallback to browser standard SpeechSynthesis (Edge TTS)
   if ('speechSynthesis' in window) {
-    // Cancel any current speaking activity
     window.speechSynthesis.cancel();
 
-    // Resolve the best voice asynchronously
     const voice = await getBestVoice();
 
-    // Small delay to ensure speech engine resets cleanly
     setTimeout(() => {
       const utterance = new SpeechSynthesisUtterance(text);
       if (voice) {
         utterance.voice = voice;
       }
-      utterance.rate = 0.95; // Natural clear speed
+      utterance.rate = 0.95;
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }, 150);
