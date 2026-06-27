@@ -105,6 +105,18 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
       return;
     }
 
+    // Check if customer with this phone number is already active
+    try {
+      const active = await getActiveCustomers();
+      const duplicateActive = active.find(c => c.phone.trim() === phone.trim());
+      if (duplicateActive) {
+        alert(`Customer with phone number "${phone}" is already checked in (Sitting in ${duplicateActive.location}). Please check them out before checking them in again.`);
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to verify check-in collisions', err);
+    }
+
     // Generate unique customer ID (C-#### format) avoiding active list collisions
     let randomId = Math.floor(1000 + Math.random() * 9000);
     try {
