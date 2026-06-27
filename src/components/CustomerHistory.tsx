@@ -12,7 +12,7 @@ import {
   Phone,
   Eye
 } from 'lucide-react';
-import type { Bill, CafeSettings } from '../types';
+import type { Bill, CafeSettings, User as UserType } from '../types';
 import { getBills } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
@@ -20,10 +20,12 @@ import { BillDetailsModal } from './BillDetailsModal';
 
 interface CustomerHistoryProps {
   settings: CafeSettings;
+  currentUser: UserType;
 }
 
 export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
-  settings
+  settings,
+  currentUser
 }) => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [search, setSearch] = useState('');
@@ -45,7 +47,11 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
 
   const loadHistory = async () => {
     try {
-      const allBills = await getBills();
+      let allBills = await getBills();
+      // Filter if staff member
+      if (currentUser.role === 'staff') {
+        allBills = allBills.filter(b => b.cashierId === currentUser.id);
+      }
       // Sort newest first
       allBills.sort((a, b) => new Date(b.exitTime).getTime() - new Date(a.exitTime).getTime());
       setBills(allBills);
@@ -216,6 +222,7 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
               <tr className="bg-apple-gray-50 border-b border-apple-gray-100/80 text-apple-gray-300 font-bold uppercase tracking-wider">
                 <th className="py-4 px-6">Bill Number</th>
                 <th className="py-4 px-6">Customer Details</th>
+                {currentUser.role !== 'staff' && <th className="py-4 px-6">Cashier</th>}
                 <th className="py-4 px-6">Area</th>
                 <th className="py-4 px-6">Duration</th>
                 <th className="py-4 px-6">Grand Total</th>
@@ -226,7 +233,7 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
             <tbody className="divide-y divide-apple-gray-50 text-apple-gray-800">
               {filteredBills.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center text-apple-gray-300">
+                  <td colSpan={currentUser.role !== 'staff' ? 8 : 7} className="py-16 text-center text-apple-gray-300">
                     <Receipt className="w-10 h-10 opacity-30 mx-auto mb-2" />
                     <span className="font-semibold block">No historical bills matched</span>
                     <span className="font-light text-[10px] mt-0.5">Finalize a seating session to archive records here.</span>
@@ -247,6 +254,11 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
                         </span>
                       </button>
                     </td>
+                    {currentUser.role !== 'staff' && (
+                      <td className="py-4 px-6 font-semibold text-orange-500">
+                        {bill.cashierName || 'System'}
+                      </td>
+                    )}
                     <td className="py-4 px-6">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${
                         bill.location === 'Basement' 

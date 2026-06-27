@@ -374,6 +374,9 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
             </div>
             <p className="text-xs text-apple-gray-300 font-medium mt-1">
               Phone: {customer.phone} | Seating ID: {customer.id} | Guests: {customer.numGuests}
+              {_currentUser.role !== 'staff' && customer.cashierName && (
+                <> | Order Taken By: <span className="font-semibold text-orange-500">{customer.cashierName}</span></>
+              )}
             </p>
           </div>
         </div>

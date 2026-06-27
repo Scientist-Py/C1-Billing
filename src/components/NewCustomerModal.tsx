@@ -138,7 +138,9 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
       notes: notes.trim(),
       entryTime: new Date().toISOString(),
       status: 'active',
-      orderedItems: []
+      orderedItems: [],
+      cashierId: currentUser.id,
+      cashierName: currentUser.username
     };
 
     try {

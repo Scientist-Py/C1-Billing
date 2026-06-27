@@ -231,8 +231,11 @@ export const ActiveCustomers: React.FC<ActiveCustomersProps> = ({
                     </span>
                   </div>
 
-                  <div className="text-[9px] font-semibold text-apple-gray-300 font-mono mt-1">
-                    ID: {customer.id}
+                  <div className="flex justify-between items-center text-[9px] font-semibold text-apple-gray-300 font-mono mt-1">
+                    <span>ID: {customer.id}</span>
+                    {currentUser.role !== 'staff' && customer.cashierName && (
+                      <span className="text-orange-500 font-sans font-semibold">By: {customer.cashierName}</span>
+                    )}
                   </div>
                 </div>
 

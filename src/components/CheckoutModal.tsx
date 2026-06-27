@@ -160,7 +160,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       paymentMethod,
       paymentDetails: finalPaymentDetails,
       status: paymentStatus,
-      cashierName: currentUser.username
+      cashierName: customer.cashierName || currentUser.username,
+      cashierId: customer.cashierId || currentUser.id
     };
 
     try {

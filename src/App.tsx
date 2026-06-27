@@ -300,10 +300,19 @@ function App() {
     }
   }, [selectedCustomerId, activeCustomers]);
 
+  // Reload and filter active seating list whenever the logged-in user changes
+  useEffect(() => {
+    reloadActiveCustomers();
+  }, [currentUser]);
+
   const reloadActiveCustomers = async () => {
     try {
       const list = await getActiveCustomers();
-      setActiveCustomers(list);
+      if (currentUser && currentUser.role === 'staff') {
+        setActiveCustomers(list.filter(c => c.cashierId === currentUser.id));
+      } else {
+        setActiveCustomers(list);
+      }
     } catch (err) {
       console.error('Error reloading active seating data', err);
     }
@@ -470,6 +479,7 @@ function App() {
                   onViewActiveClick={() => setTab('active')}
                   onSelectCustomer={handleSelectCustomer}
                   settings={settings}
+                  currentUser={currentUser}
                 />
               )}
               {currentTab === 'active' && (
@@ -483,7 +493,7 @@ function App() {
                 />
               )}
               {currentTab === 'history' && (
-                <CustomerHistory settings={settings} />
+                <CustomerHistory settings={settings} currentUser={currentUser} />
               )}
               {currentTab === 'menu' && (
                 <MenuManagement currentUser={currentUser} settings={settings} />

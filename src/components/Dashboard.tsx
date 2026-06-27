@@ -19,7 +19,7 @@ import {
   Pie, 
   Cell 
 } from 'recharts';
-import type { Customer, Bill, CafeSettings } from '../types';
+import type { Customer, Bill, CafeSettings, User } from '../types';
 import { getActiveCustomers, getBills, calculateBasementCharge } from '../utils/db';
 
 interface DashboardProps {
@@ -27,13 +27,15 @@ interface DashboardProps {
   onViewActiveClick: () => void;
   onSelectCustomer: (id: string) => void;
   settings: CafeSettings;
+  currentUser: User;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   onNewCustomerClick,
   onViewActiveClick,
   onSelectCustomer,
-  settings
+  settings,
+  currentUser
 }) => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [activeCustomers, setActiveCustomers] = useState<Customer[]>([]);
@@ -57,8 +59,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        const pastBills = await getBills();
-        const active = await getActiveCustomers();
+        let pastBills = await getBills();
+        let active = await getActiveCustomers();
+        
+        // Filter by cashier ID if staff profile
+        if (currentUser.role === 'staff') {
+          pastBills = pastBills.filter(b => b.cashierId === currentUser.id);
+          active = active.filter(c => c.cashierId === currentUser.id);
+        }
+        
         setBills(pastBills);
         setActiveCustomers(active);
         

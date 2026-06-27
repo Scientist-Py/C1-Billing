@@ -40,6 +40,8 @@ export interface Customer {
   entryTime: string; // ISO String
   status: CustomerStatus;
   orderedItems: OrderedItem[];
+  cashierId?: string;
+  cashierName?: string;
 }
 
 export interface PaymentDetails {
@@ -73,6 +75,7 @@ export interface Bill {
   paymentDetails?: PaymentDetails;
   status: 'Paid' | 'Pending';
   cashierName: string;
+  cashierId?: string;
 }
 
 export interface CafeSettings {
