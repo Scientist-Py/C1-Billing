@@ -10,6 +10,84 @@
  * 5. Copy the generated Web App URL and paste it into your POS settings.
  */
 
+function doGet(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 1. Fetch Active Customers
+    var activeSheet = ss.getSheetByName("Active CheckIns");
+    var customers = [];
+    if (activeSheet) {
+      var activeData = activeSheet.getDataRange().getValues();
+      if (activeData.length > 1) {
+        for (var i = 1; i < activeData.length; i++) {
+          try {
+            var row = activeData[i];
+            if (row[0]) {
+              // Reconstruct from JSON in column 8, fallback to column cells
+              var raw = row[7] ? JSON.parse(row[7]) : {
+                id: row[0],
+                name: row[1],
+                phone: row[2],
+                location: row[3],
+                numGuests: parseInt(row[4]) || 1,
+                entryTime: new Date().toISOString(),
+                status: "active",
+                notes: row[6] || "",
+                orderedItems: []
+              };
+              customers.push(raw);
+            }
+          } catch(err) {}
+        }
+      }
+    }
+    
+    // 2. Fetch Bills
+    var billsSheet = ss.getSheetByName("Sales & Bills");
+    var bills = [];
+    if (billsSheet) {
+      var billsData = billsSheet.getDataRange().getValues();
+      if (billsData.length > 1) {
+        for (var j = 1; j < billsData.length; j++) {
+          try {
+            var rowB = billsData[j];
+            if (rowB[0]) {
+              // Reconstruct from JSON in column 16, fallback to column cells
+              var rawBill = rowB[15] ? JSON.parse(rowB[15]) : {
+                id: rowB[0],
+                customerId: rowB[0],
+                billNumber: rowB[0],
+                customerName: rowB[2],
+                customerPhone: rowB[3],
+                location: rowB[4],
+                date: rowB[1],
+                grandTotal: parseFloat(rowB[10]) || 0,
+                paymentMethod: rowB[11],
+                status: rowB[12],
+                cashierName: rowB[13] || "",
+                orderedItems: []
+              };
+              bills.push(rawBill);
+            }
+          } catch(err) {}
+        }
+      }
+    }
+    
+    var result = {
+      customers: customers,
+      bills: bills
+    };
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
@@ -21,9 +99,21 @@ function doPost(e) {
     
     if (action === 'CHECKIN') {
       var sheet = getOrCreateSheet(ss, "Active CheckIns", 1);
-      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes", "Items JSON", "Cashier ID", "Cashier Name", "Original Entry Time"]);
+      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes", "CustomerDataJSON"]);
       
       var checkInTime = formatTimeOnly(payload.entryTime);
+      
+      // Remove existing row with same customer ID first to support updates
+      var lastRowCheckin = sheet.getLastRow();
+      if (lastRowCheckin > 1) {
+        var values = sheet.getRange(2, 1, lastRowCheckin - 1, 1).getValues();
+        for (var r = 0; r < values.length; r++) {
+          if (values[r][0] === payload.id) {
+            sheet.deleteRow(r + 2);
+            break;
+          }
+        }
+      }
       
       sheet.appendRow([
         payload.id,
@@ -33,10 +123,7 @@ function doPost(e) {
         payload.numGuests,
         checkInTime,
         payload.notes,
-        "[]",
-        payload.cashierId || "",
-        payload.cashierName || "",
-        payload.entryTime // Column 11: ISO string entry time
+        JSON.stringify(payload)
       ]);
       
       // Apply styles
@@ -81,7 +168,7 @@ function doPost(e) {
       setupHeaders(salesSheet, [
         "Bill Number", "Date", "Name", "Phone", "Seating Area", 
         "Check-In", "Check-Out", "Time Spent", "Food Total", 
-        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered", "Cashier ID", "Bill JSON"
+        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered", "BillDataJSON"
       ]);
       
       salesSheet.appendRow([
@@ -100,8 +187,7 @@ function doPost(e) {
         payload.status,
         payload.cashierName,
         itemsSummary,
-        payload.cashierId || "",
-        JSON.stringify(payload) // Save raw JSON in column 17 for full lossless synchronization
+        JSON.stringify(payload)
       ]);
 
       // Apply clean formatting
@@ -125,131 +211,6 @@ function doPost(e) {
       // Update Dashboard Metric Cards & Rebuild Charts
       createOrUpdateDashboard(ss);
       
-    } else if (action === 'UPDATE_ACTIVE') {
-      var checkinSheet = ss.getSheetByName("Active CheckIns");
-      if (checkinSheet) {
-        var lastRowCheckin = checkinSheet.getLastRow();
-        if (lastRowCheckin > 1) {
-          var values = checkinSheet.getRange(2, 1, lastRowCheckin - 1, 1).getValues();
-          for (var r = 0; r < values.length; r++) {
-            if (values[r][0] === payload.id) {
-              var rowNum = r + 2;
-              checkinSheet.getRange(rowNum, 2).setValue(payload.name);
-              checkinSheet.getRange(rowNum, 3).setValue(payload.phone);
-              checkinSheet.getRange(rowNum, 4).setValue(payload.location);
-              checkinSheet.getRange(rowNum, 5).setValue(payload.numGuests);
-              checkinSheet.getRange(rowNum, 7).setValue(payload.notes);
-              // Setup dynamic columns: 8=Items JSON, 9=Cashier ID, 10=Cashier Name
-              checkinSheet.getRange(rowNum, 8).setValue(JSON.stringify(payload.orderedItems || []));
-              checkinSheet.getRange(rowNum, 9).setValue(payload.cashierId || "");
-              checkinSheet.getRange(rowNum, 10).setValue(payload.cashierName || "");
-              break;
-            }
-          }
-        }
-      }
-      
-    } else if (action === 'DELETE_BILL') {
-      var salesSheet = ss.getSheetByName("Sales & Bills");
-      if (salesSheet) {
-        var lastRowSales = salesSheet.getLastRow();
-        if (lastRowSales > 1) {
-          var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
-          for (var r = 0; r < values.length; r++) {
-            if (values[r][0] === payload.billNumber) {
-              salesSheet.deleteRow(r + 2);
-              break;
-            }
-          }
-        }
-      }
-      createOrUpdateDashboard(ss);
-
-    } else if (action === 'FETCH_ALL') {
-      var checkinSheet = ss.getSheetByName("Active CheckIns");
-      var activeCheckins = [];
-      if (checkinSheet) {
-        var lastRow = checkinSheet.getLastRow();
-        if (lastRow > 1) {
-          // Read up to 11 columns (now including original entry time)
-          var values = checkinSheet.getRange(2, 1, lastRow - 1, 11).getValues();
-          for (var i = 0; i < values.length; i++) {
-            var orderedItems = [];
-            try {
-              if (values[i][7]) {
-                orderedItems = JSON.parse(values[i][7]);
-              }
-            } catch (err) {}
-            
-            // Reconstruct full ISO string from col 11 or fallback
-            var entryTimeVal = values[i][10] ? values[i][10].toString() : (values[i][5] ? values[i][5].toString() : new Date().toISOString());
-
-            activeCheckins.push({
-              id: values[i][0],
-              name: values[i][1],
-              phone: values[i][2],
-              location: values[i][3],
-              numGuests: parseInt(values[i][4]) || 1,
-              entryTime: entryTimeVal,
-              notes: values[i][6],
-              status: 'active',
-              orderedItems: orderedItems,
-              cashierId: values[i][8] || "",
-              cashierName: values[i][9] || ""
-            });
-          }
-        }
-      }
-      
-      var salesSheet = ss.getSheetByName("Sales & Bills");
-      var pastBills = [];
-      if (salesSheet) {
-        var lastRowSales = salesSheet.getLastRow();
-        if (lastRowSales > 1) {
-          var salesValues = salesSheet.getRange(2, 1, lastRowSales - 1, 17).getValues(); // 17 columns
-          for (var j = 0; j < salesValues.length; j++) {
-            var rawBillJson = salesValues[j][16];
-            if (rawBillJson) {
-              try {
-                pastBills.push(JSON.parse(rawBillJson));
-              } catch (e) {
-                // reconstruction fallback
-                pastBills.push({
-                  id: "bill_" + salesValues[j][0],
-                  customerId: "",
-                  customerName: salesValues[j][2],
-                  customerPhone: salesValues[j][3],
-                  location: salesValues[j][4],
-                  billNumber: salesValues[j][0],
-                  date: salesValues[j][1],
-                  entryTime: new Date().toISOString(),
-                  exitTime: new Date().toISOString(),
-                  timeSpentMinutes: parseInt(salesValues[j][7]) || 0,
-                  orderedItems: [],
-                  foodTotal: parseFloat(salesValues[j][8]) || 0,
-                  basementCharges: parseFloat(salesValues[j][9]) || 0,
-                  subtotal: parseFloat(salesValues[j][10]) || 0,
-                  discount: 0,
-                  extraCharges: 0,
-                  tax: 0,
-                  grandTotal: parseFloat(salesValues[j][10]) || 0,
-                  paymentMethod: salesValues[j][11],
-                  status: salesValues[j][12],
-                  cashierName: salesValues[j][13],
-                  cashierId: ""
-                });
-              }
-            }
-          }
-        }
-      }
-      
-      return ContentService.createTextOutput(JSON.stringify({
-        status: "success",
-        activeCheckins: activeCheckins,
-        pastBills: pastBills
-      })).setMimeType(ContentService.MimeType.JSON);
-
     } else if (action === 'AUDIT') {
       var auditSheet = getOrCreateSheet(ss, "Audit Logs", 3);
       setupHeaders(auditSheet, ["Timestamp", "User ID", "Cashier", "Action", "Details"]);
@@ -314,6 +275,21 @@ function doPost(e) {
       }
       
       formatStaffSheet(sheet);
+    } else if (action === 'DELETE_BILL') {
+      var salesSheet = ss.getSheetByName("Sales & Bills");
+      if (salesSheet) {
+        var lastRowSales = salesSheet.getLastRow();
+        if (lastRowSales > 1) {
+          var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
+          for (var r = 0; r < values.length; r++) {
+            if (values[r][0] === payload.billNumber || values[r][0] === payload.id) {
+              salesSheet.deleteRow(r + 2);
+              break;
+            }
+          }
+        }
+      }
+      createOrUpdateDashboard(ss);
     }
     
     return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
@@ -597,20 +573,4 @@ function formatStaffSheet(sheet) {
   } catch (err) {
     Logger.log("Err styling staff sheet: " + err.toString());
   }
-}
-
-function convertTimeTo24h(timeStr) {
-  if (!timeStr) return "12:00";
-  var time = timeStr.match(/(\d+)(?::(\d\d))?\s*(p|a?)/i);
-  if (!time) return "12:00";
-  var hours = parseInt(time[1], 10);
-  if (time[3]) {
-    var ampm = time[3].toLowerCase();
-    if (ampm === "p" && hours < 12) hours += 12;
-    if (ampm === "a" && hours === 12) hours = 0;
-  }
-  var minutes = parseInt(time[2], 10) || 0;
-  var hStr = hours < 10 ? "0" + hours : "" + hours;
-  var mStr = minutes < 10 ? "0" + minutes : "" + minutes;
-  return hStr + ":" + mStr;
 }

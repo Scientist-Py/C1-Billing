@@ -368,7 +368,10 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   return getStore('customers', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.put(customer);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        syncToGoogleSheets('CHECKIN', customer);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   });
