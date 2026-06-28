@@ -46,32 +46,6 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
     historicalBills: Bill[];
   } | null>(null);
 
-  const handleDeleteBill = async (billObj: Bill) => {
-    if (!window.confirm(`Are you sure you want to delete invoice ${billObj.billNumber} for ${billObj.customerName}? This will permanently remove it from database logs.`)) {
-      return;
-    }
-    try {
-      // 1. Delete from local IndexedDB
-      await deleteBill(billObj.id);
-
-      // 2. Sync deletion to Google Sheets
-      syncToGoogleSheets('DELETE_BILL', { billNumber: billObj.billNumber });
-
-      // 3. Write Audit Log
-      await saveAuditLog(
-        currentUser.id,
-        currentUser.username,
-        'DELETE_BILL',
-        `Deleted invoice ${billObj.billNumber} for ${billObj.customerName}. Value: ${settings.currency}${billObj.grandTotal.toFixed(2)}`
-      );
-
-      alert(`Invoice ${billObj.billNumber} successfully deleted.`);
-      loadHistory();
-    } catch (err) {
-      alert('Failed to delete invoice from database.');
-    }
-  };
-
   const loadHistory = async () => {
     try {
       let allBills = await getBills();
@@ -84,6 +58,36 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
       setBills(allBills);
     } catch (err) {
       console.error('Failed to load billing history', err);
+    }
+  };
+
+  const handleDeleteBill = async (bill: Bill) => {
+    const confirmation = window.confirm(
+      `WARNING: Are you sure you want to permanently delete bill "${bill.billNumber}" for ${bill.customerName}? This action cannot be undone.`
+    );
+    if (!confirmation) return;
+
+    try {
+      await deleteBill(bill.id);
+      
+      // Write audit log
+      await saveAuditLog(
+        currentUser.id,
+        currentUser.username,
+        'DELETE_BILL',
+        `Permanently deleted bill number ${bill.billNumber} of customer ${bill.customerName} (Phone: ${bill.customerPhone}, Total: ${settings.currency}${bill.grandTotal.toFixed(2)})`
+      );
+
+      // Trigger background sync to Google Sheets (action: 'DELETE_BILL')
+      syncToGoogleSheets('DELETE_BILL', { id: bill.id, billNumber: bill.billNumber });
+
+      alert(`Bill "${bill.billNumber}" deleted successfully.`);
+      
+      // Reload history list
+      loadHistory();
+    } catch (err) {
+      console.error('Failed to delete bill:', err);
+      alert('Failed to delete bill. Please try again.');
     }
   };
 
@@ -342,8 +346,8 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
                         {currentUser.role === 'admin' && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteBill(bill); }}
-                            className="p-1.5 rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 hover:border-red-200 text-red-500 cursor-pointer flex items-center justify-center"
-                            title="Delete Invoice"
+                            className="p-1.5 rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 text-red-500 cursor-pointer"
+                            title="Delete Bill"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
