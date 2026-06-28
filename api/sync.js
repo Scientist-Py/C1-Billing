@@ -45,16 +45,12 @@ export default async function handler(req, res) {
       });
 
       // Google Apps Script redirects 302 to script.googleusercontent.com
-      // We must handle the redirect manually to preserve the POST method
+      // The redirect target page only accepts GET requests to read the response.
       if (response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
         const redirectUrl = response.headers.get('location');
         if (redirectUrl) {
           response = await fetch(redirectUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(req.body)
+            method: 'GET'
           });
         }
       }
