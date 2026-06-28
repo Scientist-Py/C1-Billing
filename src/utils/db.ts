@@ -116,7 +116,8 @@ export const seedDefaultData = async () => {
       receiptFooter: 'Thank you for visiting Chapter One Cafe! Please come again.',
       whatsappTemplate: 'Hello {name}, thank you for dining with us! Your total bill is {amount}. Download details here: {link}',
       groqApiKey: targetKey,
-      geminiApiKey: geminiTargetKey
+      geminiApiKey: geminiTargetKey,
+      googleSheetsUrl: 'https://script.google.com/macros/s/AKfycbyck-RU8sA5udjDVgy2Hd9bf_fMeD4Z6hbnbop6UxvQKOH1ffO8iy0BInq2XJPmQxzV/exec'
     };
     await saveSettings(defaultSettings);
   } else {
@@ -127,6 +128,10 @@ export const seedDefaultData = async () => {
     }
     if (!settingsObj.geminiApiKey || settingsObj.geminiApiKey.trim().length === 0) {
       settingsObj.geminiApiKey = geminiTargetKey;
+      updated = true;
+    }
+    if (!settingsObj.googleSheetsUrl || settingsObj.googleSheetsUrl.trim().length === 0) {
+      settingsObj.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbyck-RU8sA5udjDVgy2Hd9bf_fMeD4Z6hbnbop6UxvQKOH1ffO8iy0BInq2XJPmQxzV/exec';
       updated = true;
     }
     if (updated) {
