@@ -77,7 +77,7 @@ function doPost(e) {
       setupHeaders(salesSheet, [
         "Bill Number", "Date", "Name", "Phone", "Seating Area", 
         "Check-In", "Check-Out", "Time Spent", "Food Total", 
-        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered"
+        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered", "Cashier ID", "Bill JSON"
       ]);
       
       salesSheet.appendRow([
@@ -95,7 +95,9 @@ function doPost(e) {
         payload.paymentMethod,
         payload.status,
         payload.cashierName,
-        itemsSummary
+        itemsSummary,
+        payload.cashierId || "",
+        JSON.stringify(payload) // Save raw JSON in column 17 for full lossless synchronization
       ]);
 
       // Apply clean formatting
@@ -119,6 +121,127 @@ function doPost(e) {
       // Update Dashboard Metric Cards & Rebuild Charts
       createOrUpdateDashboard(ss);
       
+    } else if (action === 'UPDATE_ACTIVE') {
+      var checkinSheet = ss.getSheetByName("Active CheckIns");
+      if (checkinSheet) {
+        var lastRowCheckin = checkinSheet.getLastRow();
+        if (lastRowCheckin > 1) {
+          var values = checkinSheet.getRange(2, 1, lastRowCheckin - 1, 1).getValues();
+          for (var r = 0; r < values.length; r++) {
+            if (values[r][0] === payload.id) {
+              var rowNum = r + 2;
+              checkinSheet.getRange(rowNum, 2).setValue(payload.name);
+              checkinSheet.getRange(rowNum, 3).setValue(payload.phone);
+              checkinSheet.getRange(rowNum, 4).setValue(payload.location);
+              checkinSheet.getRange(rowNum, 5).setValue(payload.numGuests);
+              checkinSheet.getRange(rowNum, 7).setValue(payload.notes);
+              // Setup dynamic columns: 8=Items JSON, 9=Cashier ID, 10=Cashier Name
+              checkinSheet.getRange(rowNum, 8).setValue(JSON.stringify(payload.orderedItems || []));
+              checkinSheet.getRange(rowNum, 9).setValue(payload.cashierId || "");
+              checkinSheet.getRange(rowNum, 10).setValue(payload.cashierName || "");
+              break;
+            }
+          }
+        }
+      }
+      
+    } else if (action === 'DELETE_BILL') {
+      var salesSheet = ss.getSheetByName("Sales & Bills");
+      if (salesSheet) {
+        var lastRowSales = salesSheet.getLastRow();
+        if (lastRowSales > 1) {
+          var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
+          for (var r = 0; r < values.length; r++) {
+            if (values[r][0] === payload.billNumber) {
+              salesSheet.deleteRow(r + 2);
+              break;
+            }
+          }
+        }
+      }
+      createOrUpdateDashboard(ss);
+
+    } else if (action === 'FETCH_ALL') {
+      var checkinSheet = ss.getSheetByName("Active CheckIns");
+      var activeCheckins = [];
+      if (checkinSheet) {
+        var lastRow = checkinSheet.getLastRow();
+        if (lastRow > 1) {
+          // Read up to 10 columns (now including items JSON, cashierId, cashierName)
+          var values = checkinSheet.getRange(2, 1, lastRow - 1, 10).getValues();
+          for (var i = 0; i < values.length; i++) {
+            var orderedItems = [];
+            try {
+              if (values[i][7]) {
+                orderedItems = JSON.parse(values[i][7]);
+              }
+            } catch (err) {}
+            activeCheckins.push({
+              id: values[i][0],
+              name: values[i][1],
+              phone: values[i][2],
+              location: values[i][3],
+              numGuests: parseInt(values[i][4]) || 1,
+              entryTime: values[i][5],
+              notes: values[i][6],
+              status: 'active',
+              orderedItems: orderedItems,
+              cashierId: values[i][8] || "",
+              cashierName: values[i][9] || ""
+            });
+          }
+        }
+      }
+      
+      var salesSheet = ss.getSheetByName("Sales & Bills");
+      var pastBills = [];
+      if (salesSheet) {
+        var lastRowSales = salesSheet.getLastRow();
+        if (lastRowSales > 1) {
+          var salesValues = salesSheet.getRange(2, 1, lastRowSales - 1, 17).getValues(); // 17 columns
+          for (var j = 0; j < salesValues.length; j++) {
+            var rawBillJson = salesValues[j][16];
+            if (rawBillJson) {
+              try {
+                pastBills.push(JSON.parse(rawBillJson));
+              } catch (e) {
+                // reconstruction fallback
+                pastBills.push({
+                  id: "bill_" + salesValues[j][0],
+                  customerId: "",
+                  customerName: salesValues[j][2],
+                  customerPhone: salesValues[j][3],
+                  location: salesValues[j][4],
+                  billNumber: salesValues[j][0],
+                  date: salesValues[j][1],
+                  entryTime: new Date().toISOString(),
+                  exitTime: new Date().toISOString(),
+                  timeSpentMinutes: parseInt(salesValues[j][7]) || 0,
+                  orderedItems: [],
+                  foodTotal: parseFloat(salesValues[j][8]) || 0,
+                  basementCharges: parseFloat(salesValues[j][9]) || 0,
+                  subtotal: parseFloat(salesValues[j][10]) || 0,
+                  discount: 0,
+                  extraCharges: 0,
+                  tax: 0,
+                  grandTotal: parseFloat(salesValues[j][10]) || 0,
+                  paymentMethod: salesValues[j][11],
+                  status: salesValues[j][12],
+                  cashierName: salesValues[j][13],
+                  cashierId: ""
+                });
+              }
+            }
+          }
+        }
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        activeCheckins: activeCheckins,
+        pastBills: pastBills
+      })).setMimeType(ContentService.MimeType.JSON);
+
     } else if (action === 'AUDIT') {
       var auditSheet = getOrCreateSheet(ss, "Audit Logs", 3);
       setupHeaders(auditSheet, ["Timestamp", "User ID", "Cashier", "Action", "Details"]);
@@ -466,4 +589,20 @@ function formatStaffSheet(sheet) {
   } catch (err) {
     Logger.log("Err styling staff sheet: " + err.toString());
   }
+}
+
+function convertTimeTo24h(timeStr) {
+  if (!timeStr) return "12:00";
+  var time = timeStr.match(/(\d+)(?::(\d\d))?\s*(p|a?)/i);
+  if (!time) return "12:00";
+  var hours = parseInt(time[1], 10);
+  if (time[3]) {
+    var ampm = time[3].toLowerCase();
+    if (ampm === "p" && hours < 12) hours += 12;
+    if (ampm === "a" && hours === 12) hours = 0;
+  }
+  var minutes = parseInt(time[2], 10) || 0;
+  var hStr = hours < 10 ? "0" + hours : "" + hours;
+  var mStr = minutes < 10 ? "0" + minutes : "" + minutes;
+  return hStr + ":" + mStr;
 }

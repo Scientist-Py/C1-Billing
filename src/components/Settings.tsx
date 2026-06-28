@@ -7,7 +7,8 @@ import {
   Trash2, 
   Check, 
   Sliders,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from 'lucide-react';
 import type { CafeSettings, AuditLog, User } from '../types';
 import { 
@@ -23,11 +24,15 @@ import {
 interface SettingsProps {
   currentUser: User;
   onSettingsUpdate: (newSettings: CafeSettings) => void;
+  onSyncCloud?: () => void;
+  isSyncing?: boolean;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
   currentUser,
-  onSettingsUpdate
+  onSettingsUpdate,
+  onSyncCloud,
+  isSyncing = false
 }) => {
   const [settings, setSettings] = useState<CafeSettings | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -353,6 +358,21 @@ export const Settings: React.FC<SettingsProps> = ({
             </p>
 
             <div className="space-y-3.5">
+              {settings.googleSheetsUrl && onSyncCloud && (
+                <button
+                  type="button"
+                  onClick={onSyncCloud}
+                  disabled={isSyncing}
+                  className="w-full flex items-center justify-between px-4 py-2.5 bg-apple-gray-800 hover:bg-black text-white font-semibold border border-apple-gray-850 rounded-xl transition-apple text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className={`w-4 h-4 text-white ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'Synchronizing...' : 'Sync Cloud Sheets Data'}</span>
+                  </div>
+                  <span className="text-[9px] text-white/70 font-mono">Sync</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleBackup}

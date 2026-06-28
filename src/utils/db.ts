@@ -368,7 +368,11 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   return getStore('customers', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.put(customer);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        // Automatically sync update in background to Google Sheets
+        syncToGoogleSheets('UPDATE_ACTIVE', customer);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   });
@@ -400,6 +404,16 @@ export const getBill = (id: string): Promise<Bill | null> => {
     return new Promise((resolve, reject) => {
       const request = store.get(id);
       request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const deleteBill = (id: string): Promise<void> => {
+  return getStore('bills', 'readwrite').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   });
@@ -635,5 +649,34 @@ export const syncToGoogleSheets = async (action: string, payload: any): Promise<
     });
   } catch (err) {
     console.warn('Error in syncToGoogleSheets wrapper:', err);
+  }
+};
+
+export const syncDatabaseFromCloud = async (
+  activeCheckins: Customer[],
+  pastBills: Bill[]
+): Promise<void> => {
+  if (activeCheckins && Array.isArray(activeCheckins)) {
+    const { store, transaction } = await getStore('customers', 'readwrite');
+    store.clear();
+    for (const c of activeCheckins) {
+      store.put(c);
+    }
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  if (pastBills && Array.isArray(pastBills)) {
+    const { store, transaction } = await getStore('bills', 'readwrite');
+    store.clear();
+    for (const b of pastBills) {
+      store.put(b);
+    }
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   }
 };

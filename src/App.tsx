@@ -13,7 +13,7 @@ import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
-import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
+import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, syncDatabaseFromCloud } from './utils/db';
 import { generateWelcomeGreeting, speakText } from './utils/ai';
 import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Play, Laptop } from 'lucide-react';
@@ -192,6 +192,12 @@ function App() {
         const cafeSettings = await getSettings();
         if (cafeSettings) {
           setSettings(cafeSettings);
+          // Auto background sync active checkins and past logs from sheets on startup
+          if (cafeSettings.googleSheetsUrl) {
+            setTimeout(() => {
+              syncWithCloud(false, cafeSettings);
+            }, 150);
+          }
         }
         await reloadActiveCustomers();
       } catch (err) {
@@ -304,6 +310,45 @@ function App() {
   useEffect(() => {
     reloadActiveCustomers();
   }, [currentUser]);
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const syncWithCloud = async (forceAlert = false, customSettings: CafeSettings | null = null) => {
+    const activeSettings = customSettings || settings;
+    if (!activeSettings || !activeSettings.googleSheetsUrl || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      console.log('Synchronizing POS database with Google Sheets...');
+      const response = await fetch(activeSettings.googleSheetsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8' // bypass preflight CORS check
+        },
+        body: JSON.stringify({ action: 'FETCH_ALL' })
+      });
+      
+      const data = await response.json();
+      if (data && data.status === 'success') {
+        await syncDatabaseFromCloud(data.activeCheckins || [], data.pastBills || []);
+        console.log('IndexedDB database synchronized with Google Sheets cloud.');
+        await reloadActiveCustomers();
+        if (forceAlert) {
+          alert('POS database successfully synchronized with Google Sheets!');
+        }
+      } else {
+        if (forceAlert) {
+          alert('Sync failed: ' + (data.message || 'unknown error'));
+        }
+      }
+    } catch (err) {
+      console.warn('Sync with Google Sheets failed:', err);
+      if (forceAlert) {
+        alert('Sync failed. Please check internet connection or Google Sheets URL.');
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const reloadActiveCustomers = async () => {
     try {
@@ -503,7 +548,12 @@ function App() {
                 <Reports settings={settings} />
               )}
               {currentTab === 'settings' && (
-                <Settings currentUser={currentUser} onSettingsUpdate={setSettings} />
+                <Settings 
+                  currentUser={currentUser} 
+                  onSettingsUpdate={setSettings} 
+                  onSyncCloud={() => syncWithCloud(true)}
+                  isSyncing={isSyncing}
+                />
               )}
             </>
           )}

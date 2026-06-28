@@ -10,10 +10,11 @@ import {
   ChevronRight,
   X,
   Phone,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 import type { Bill, CafeSettings, User as UserType } from '../types';
-import { getBills } from '../utils/db';
+import { getBills, deleteBill, saveAuditLog, syncToGoogleSheets } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
 
@@ -44,6 +45,32 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
     favoriteItems: { name: string; count: number }[];
     historicalBills: Bill[];
   } | null>(null);
+
+  const handleDeleteBill = async (billObj: Bill) => {
+    if (!window.confirm(`Are you sure you want to delete invoice ${billObj.billNumber} for ${billObj.customerName}? This will permanently remove it from database logs.`)) {
+      return;
+    }
+    try {
+      // 1. Delete from local IndexedDB
+      await deleteBill(billObj.id);
+
+      // 2. Sync deletion to Google Sheets
+      syncToGoogleSheets('DELETE_BILL', { billNumber: billObj.billNumber });
+
+      // 3. Write Audit Log
+      await saveAuditLog(
+        currentUser.id,
+        currentUser.username,
+        'DELETE_BILL',
+        `Deleted invoice ${billObj.billNumber} for ${billObj.customerName}. Value: ${settings.currency}${billObj.grandTotal.toFixed(2)}`
+      );
+
+      alert(`Invoice ${billObj.billNumber} successfully deleted.`);
+      loadHistory();
+    } catch (err) {
+      alert('Failed to delete invoice from database.');
+    }
+  };
 
   const loadHistory = async () => {
     try {
@@ -312,6 +339,15 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
                           <span>Profile</span>
                           <ChevronRight className="w-3 h-3" />
                         </button>
+                        {currentUser.role === 'admin' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteBill(bill); }}
+                            className="p-1.5 rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 hover:border-red-200 text-red-500 cursor-pointer flex items-center justify-center"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
