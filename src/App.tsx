@@ -322,7 +322,7 @@ function App() {
       } catch (err) {
         console.warn('Background database sync interval failed:', err);
       }
-    }, 30000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [currentUser]);
