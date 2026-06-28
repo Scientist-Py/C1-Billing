@@ -21,7 +21,7 @@ function doPost(e) {
     
     if (action === 'CHECKIN') {
       var sheet = getOrCreateSheet(ss, "Active CheckIns", 1);
-      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes"]);
+      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes", "Items JSON", "Cashier ID", "Cashier Name", "Original Entry Time"]);
       
       var checkInTime = formatTimeOnly(payload.entryTime);
       
@@ -32,7 +32,11 @@ function doPost(e) {
         payload.location,
         payload.numGuests,
         checkInTime,
-        payload.notes
+        payload.notes,
+        "[]",
+        payload.cashierId || "",
+        payload.cashierName || "",
+        payload.entryTime // Column 11: ISO string entry time
       ]);
       
       // Apply styles
@@ -167,8 +171,8 @@ function doPost(e) {
       if (checkinSheet) {
         var lastRow = checkinSheet.getLastRow();
         if (lastRow > 1) {
-          // Read up to 10 columns (now including items JSON, cashierId, cashierName)
-          var values = checkinSheet.getRange(2, 1, lastRow - 1, 10).getValues();
+          // Read up to 11 columns (now including original entry time)
+          var values = checkinSheet.getRange(2, 1, lastRow - 1, 11).getValues();
           for (var i = 0; i < values.length; i++) {
             var orderedItems = [];
             try {
@@ -176,13 +180,17 @@ function doPost(e) {
                 orderedItems = JSON.parse(values[i][7]);
               }
             } catch (err) {}
+            
+            // Reconstruct full ISO string from col 11 or fallback
+            var entryTimeVal = values[i][10] ? values[i][10].toString() : (values[i][5] ? values[i][5].toString() : new Date().toISOString());
+
             activeCheckins.push({
               id: values[i][0],
               name: values[i][1],
               phone: values[i][2],
               location: values[i][3],
               numGuests: parseInt(values[i][4]) || 1,
-              entryTime: values[i][5],
+              entryTime: entryTimeVal,
               notes: values[i][6],
               status: 'active',
               orderedItems: orderedItems,
