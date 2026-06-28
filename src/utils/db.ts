@@ -626,24 +626,63 @@ export const importBackupJSON = async (jsonString: string): Promise<void> => {
   }
 };
 
-// Google Sheets Sync Helper
+// Google Sheets Sync Helper (via local Vercel proxy)
 export const syncToGoogleSheets = async (action: string, payload: any): Promise<void> => {
   try {
-    const settings = await getSettings();
-    if (!settings || !settings.googleSheetsUrl) return;
-
-    fetch(settings.googleSheetsUrl, {
+    fetch('/api/sync', {
       method: 'POST',
-      mode: 'no-cors',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ action, payload }),
       keepalive: true
     }).catch((err) => {
-      console.warn('Google Sheets background sync failed:', err);
+      console.warn('Vercel backend sync proxy failed:', err);
     });
   } catch (err) {
     console.warn('Error in syncToGoogleSheets wrapper:', err);
+  }
+};
+
+// Pull active seating and invoices from Vercel Google Sheet proxy and merge locally
+export const pullAndMergeFromGoogleSheets = async (): Promise<void> => {
+  try {
+    const response = await fetch('/api/sync');
+    if (!response.ok) {
+      throw new Error(`Backend sync pull returned HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (!data) return;
+
+    // 1. Merge Active Customers (Overwrite with latest remote roster)
+    if (data.customers && Array.isArray(data.customers)) {
+      const { store, transaction } = await getStore('customers', 'readwrite');
+      store.clear();
+      for (const c of data.customers) {
+        store.put(c);
+      }
+      await new Promise<void>((res, rej) => {
+        transaction.oncomplete = () => res();
+        transaction.onerror = () => rej(transaction.error);
+      });
+    }
+
+    // 2. Merge Bills (Insert missing history records, preserve local edits)
+    if (data.bills && Array.isArray(data.bills)) {
+      const { store, transaction } = await getStore('bills', 'readwrite');
+      for (const b of data.bills) {
+        store.put(b);
+      }
+      await new Promise<void>((res, rej) => {
+        transaction.oncomplete = () => res();
+        transaction.onerror = () => rej(transaction.error);
+      });
+    }
+
+    console.log('POS bidirectional database sync complete.');
+  } catch (err) {
+    console.warn('POS bidirectional database sync failed:', err);
+    throw err;
   }
 };

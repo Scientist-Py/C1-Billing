@@ -7,8 +7,7 @@ import {
   Trash2, 
   Check, 
   Sliders,
-  DollarSign,
-  RefreshCw
+  DollarSign
 } from 'lucide-react';
 import type { CafeSettings, AuditLog, User } from '../types';
 import { 
@@ -24,20 +23,15 @@ import {
 interface SettingsProps {
   currentUser: User;
   onSettingsUpdate: (newSettings: CafeSettings) => void;
-  onSyncCloud?: () => void;
-  isSyncing?: boolean;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
   currentUser,
-  onSettingsUpdate,
-  onSyncCloud,
-  isSyncing = false
+  onSettingsUpdate
 }) => {
   const [settings, setSettings] = useState<CafeSettings | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [showApiKey, setShowApiKey] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSettingsAndLogs = async () => {
@@ -273,63 +267,42 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 opacity-80">
                 <label className="font-bold text-[#86868b]">Google Sheets Web App Sync URL</label>
                 <input
-                  type="url"
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  value={settings.googleSheetsUrl || ''}
-                  onChange={(e) => setSettings({ ...settings, googleSheetsUrl: e.target.value })}
-                  className="apple-input font-medium"
+                  type="text"
+                  value="Configured Securely on Vercel Backend"
+                  disabled
+                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
                 />
-                <span className="text-[10px] text-[#86868b] font-light leading-relaxed">
-                  Enter your Google Apps Script Web App Deployment URL. All Check-ins, Check-outs, and Audits will sync automatically in the background.
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
+                  ● Connected to Google Sheet database via server environment variables.
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 opacity-80">
                 <label className="font-bold text-[#86868b]">Groq Cloud API Key</label>
-                <div className="relative">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    placeholder="gsk_..."
-                    value={settings.groqApiKey || ''}
-                    onChange={(e) => setSettings({ ...settings, groqApiKey: e.target.value })}
-                    className="apple-input font-mono w-full pr-12 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#86868b] hover:text-black cursor-pointer"
-                  >
-                    {showApiKey ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <span className="text-[10px] text-[#86868b] font-light leading-relaxed">
-                  Enter your Groq Cloud API Key to enable AI-personalized WhatsApp receipt messages. Leave blank to use static receipts.
+                <input
+                  type="text"
+                  value="Configured Securely on Vercel Backend"
+                  disabled
+                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
+                />
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
+                  ● Authorized for Llama-3 AI personalized receipt creation.
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 opacity-80">
                 <label className="font-bold text-[#86868b]">Google Gemini API Key</label>
-                <div className="relative">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    placeholder="AQ.Ab..."
-                    value={settings.geminiApiKey || ''}
-                    onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
-                    className="apple-input font-mono w-full pr-12 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#86868b] hover:text-black cursor-pointer"
-                  >
-                    {showApiKey ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <span className="text-[10px] text-[#86868b] font-light leading-relaxed">
-                  Enter your Google Gemini API Key to enable premium AI neural voice greetings.
+                <input
+                  type="text"
+                  value="Configured Securely on Vercel Backend"
+                  disabled
+                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
+                />
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
+                  ● Authorized for Gemini 2.0 Flash voice modality text-to-speech.
                 </span>
               </div>
             </div>
@@ -358,21 +331,6 @@ export const Settings: React.FC<SettingsProps> = ({
             </p>
 
             <div className="space-y-3.5">
-              {settings.googleSheetsUrl && onSyncCloud && (
-                <button
-                  type="button"
-                  onClick={onSyncCloud}
-                  disabled={isSyncing}
-                  className="w-full flex items-center justify-between px-4 py-2.5 bg-apple-gray-800 hover:bg-black text-white font-semibold border border-apple-gray-850 rounded-xl transition-apple text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className={`w-4 h-4 text-white ${isSyncing ? 'animate-spin' : ''}`} />
-                    <span>{isSyncing ? 'Synchronizing...' : 'Sync Cloud Sheets Data'}</span>
-                  </div>
-                  <span className="text-[9px] text-white/70 font-mono">Sync</span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={handleBackup}

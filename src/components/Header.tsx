@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Calendar, Clock, Users, Utensils, Receipt } from 'lucide-react';
+import { Search, Plus, Calendar, Clock, Users, Utensils, Receipt, RefreshCw } from 'lucide-react';
 import type { Customer, Bill, MenuItem, User } from '../types';
-import { getActiveCustomers, getBills, getMenu } from '../utils/db';
+import { getActiveCustomers, getBills, getMenu, pullAndMergeFromGoogleSheets } from '../utils/db';
 
 interface HeaderProps {
   title: string;
@@ -11,6 +11,7 @@ interface HeaderProps {
   setTab: (tab: string) => void;
   currency: string;
   currentUser: User;
+  onSyncComplete?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,8 +21,25 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectBill,
   setTab,
   currency,
-  currentUser
+  currentUser,
+  onSyncComplete
 }) => {
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'syncing' | 'failed'>('idle');
+
+  const triggerManualSync = async () => {
+    setSyncStatus('syncing');
+    try {
+      await pullAndMergeFromGoogleSheets();
+      setSyncStatus('success');
+      if (onSyncComplete) {
+        onSyncComplete();
+      }
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    } catch (err) {
+      setSyncStatus('failed');
+      setTimeout(() => setSyncStatus('idle'), 5000);
+    }
+  };
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -244,6 +262,33 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Date-Time & Quick Actions */}
       <div className="flex items-center gap-6">
+        {/* Sync Indicator Button */}
+        <button
+          onClick={triggerManualSync}
+          disabled={syncStatus === 'syncing'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-300 cursor-pointer ${
+            syncStatus === 'syncing'
+              ? 'bg-apple-gray-50 border-apple-gray-100 text-apple-gray-300 animate-pulse'
+              : syncStatus === 'success'
+              ? 'bg-green-50 border-green-100 text-green-600'
+              : syncStatus === 'failed'
+              ? 'bg-red-50 border-red-100 text-red-500'
+              : 'bg-white border-apple-gray-100 hover:bg-apple-gray-50 text-apple-gray-800'
+          }`}
+          title="Synchronize data with cloud server"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+          <span className="hidden md:inline">
+            {syncStatus === 'syncing'
+              ? 'Syncing...'
+              : syncStatus === 'success'
+              ? 'Synced'
+              : syncStatus === 'failed'
+              ? 'Failed'
+              : 'Sync Server'}
+          </span>
+        </button>
+
         {/* Live Date/Time widget */}
         <div className="hidden sm:flex items-center gap-4 text-xs text-apple-gray-300 font-medium">
           <div className="flex items-center gap-1.5">
