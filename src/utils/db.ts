@@ -725,7 +725,10 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<void> => {
     }
     await new Promise<void>((res, rej) => {
       transaction.oncomplete = () => res();
-      transaction.onerror = () => rej(transaction.error);
+      transaction.onerror = (e) => {
+        console.error("IndexedDB Sync customer transaction failed:", e, transaction.error);
+        rej(transaction.error || new Error('Sync customer transaction failed'));
+      };
     });
   }
 
@@ -737,7 +740,10 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<void> => {
     }
     await new Promise<void>((res, rej) => {
       transaction.oncomplete = () => res();
-      transaction.onerror = () => rej(transaction.error);
+      transaction.onerror = (e) => {
+        console.error("IndexedDB Sync bill transaction failed:", e, transaction.error);
+        rej(transaction.error || new Error('Sync bill transaction failed'));
+      };
     });
   }
 
