@@ -15,7 +15,21 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const response = await fetch(sheetUrl);
+      let response = await fetch(sheetUrl, {
+        method: 'GET',
+        redirect: 'manual'
+      });
+
+      // Handle 302/301 redirects manually for GET
+      if (response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
+        const redirectUrl = response.headers.get('location');
+        if (redirectUrl) {
+          response = await fetch(redirectUrl, {
+            method: 'GET'
+          });
+        }
+      }
+      
       const data = await response.json();
       return res.status(200).json(data);
     } 
