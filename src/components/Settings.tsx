@@ -267,42 +267,45 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5 opacity-80">
-                <label className="font-bold text-[#86868b]">Google Sheets Web App Sync URL</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Google Sheets Web App Sync URL (Local / Fallback)</label>
                 <input
-                  type="text"
-                  value="Configured Securely on Vercel Backend"
-                  disabled
-                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
+                  type="url"
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  value={settings.googleSheetsUrl || ''}
+                  onChange={(e) => setSettings({ ...settings, googleSheetsUrl: e.target.value })}
+                  className="apple-input font-medium text-xs"
                 />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
-                  ● Connected to Google Sheet database via server environment variables.
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
+                  ● Configured securely in Vercel. For local testing or fallback, enter the URL above.
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5 opacity-80">
-                <label className="font-bold text-[#86868b]">Groq Cloud API Key</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Groq Cloud API Key (Local / Fallback)</label>
                 <input
-                  type="text"
-                  value="Configured Securely on Vercel Backend"
-                  disabled
-                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
+                  type="password"
+                  placeholder="gsk_..."
+                  value={settings.groqApiKey || ''}
+                  onChange={(e) => setSettings({ ...settings, groqApiKey: e.target.value })}
+                  className="apple-input font-mono text-xs"
                 />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
-                  ● Authorized for Llama-3 AI personalized receipt creation.
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
+                  ● Configured securely in Vercel. For local testing or fallback, enter your key above.
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5 opacity-80">
-                <label className="font-bold text-[#86868b]">Google Gemini API Key</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Google Gemini API Key (Local / Fallback)</label>
                 <input
-                  type="text"
-                  value="Configured Securely on Vercel Backend"
-                  disabled
-                  className="apple-input font-medium bg-[#f5f5f7] border-apple-gray-100 text-apple-gray-300 cursor-not-allowed select-none"
+                  type="password"
+                  placeholder="AQ.Ab..."
+                  value={settings.geminiApiKey || ''}
+                  onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                  className="apple-input font-mono text-xs"
                 />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed flex items-center gap-1">
-                  ● Authorized for Gemini 2.0 Flash voice modality text-to-speech.
+                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
+                  ● Configured securely in Vercel. For local testing or fallback, enter your key above.
                 </span>
               </div>
             </div>

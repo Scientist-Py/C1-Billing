@@ -629,63 +629,117 @@ export const importBackupJSON = async (jsonString: string): Promise<void> => {
   }
 };
 
-// Google Sheets Sync Helper (via local Vercel proxy)
+// Google Sheets Sync Helper (via Vercel proxy with client-side fallback)
 export const syncToGoogleSheets = async (action: string, payload: any): Promise<void> => {
   try {
-    fetch('/api/sync', {
+    const response = await fetch('/api/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ action, payload }),
-      keepalive: true
-    }).catch((err) => {
-      console.warn('Vercel backend sync proxy failed:', err);
+      body: JSON.stringify({ action, payload })
     });
+    
+    if (response.ok) {
+      const text = await response.text();
+      if (text.trim().startsWith('{')) {
+        const data = JSON.parse(text);
+        if (data && data.status === 'success') {
+          console.log('Sync succeeded via Vercel backend proxy.');
+          return;
+        }
+      }
+    }
+    throw new Error('Vercel API route not available or returned non-success response');
   } catch (err) {
-    console.warn('Error in syncToGoogleSheets wrapper:', err);
+    console.warn('Vercel backend sync proxy failed, trying fallback direct sync:', err);
+    try {
+      const settings = await getSettings();
+      if (settings && settings.googleSheetsUrl) {
+        fetch(settings.googleSheetsUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ action, payload }),
+          keepalive: true
+        }).then(() => {
+          console.log('Sync succeeded via direct client-side fallback.');
+        }).catch((fallbackErr) => {
+          console.warn('Direct client-side fallback sync failed:', fallbackErr);
+        });
+      }
+    } catch (fallbackErr) {
+      console.warn('Direct fallback setup failed:', fallbackErr);
+    }
   }
 };
 
-// Pull active seating and invoices from Vercel Google Sheet proxy and merge locally
+// Pull active seating and invoices from Vercel Google Sheet proxy and merge locally (with fallback)
 export const pullAndMergeFromGoogleSheets = async (): Promise<void> => {
+  let fetchedData = null;
+
   try {
     const response = await fetch('/api/sync');
-    if (!response.ok) {
-      throw new Error(`Backend sync pull returned HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    if (!data) return;
-
-    // 1. Merge Active Customers (Overwrite with latest remote roster)
-    if (data.customers && Array.isArray(data.customers)) {
-      const { store, transaction } = await getStore('customers', 'readwrite');
-      store.clear();
-      for (const c of data.customers) {
-        store.put(c);
+    if (response.ok) {
+      const text = await response.text();
+      if (text.trim().startsWith('{')) {
+        fetchedData = JSON.parse(text);
+        console.log('Fetched sync data via Vercel backend proxy.');
       }
-      await new Promise<void>((res, rej) => {
-        transaction.oncomplete = () => res();
-        transaction.onerror = () => rej(transaction.error);
-      });
     }
-
-    // 2. Merge Bills (Insert missing history records, preserve local edits)
-    if (data.bills && Array.isArray(data.bills)) {
-      const { store, transaction } = await getStore('bills', 'readwrite');
-      for (const b of data.bills) {
-        store.put(b);
-      }
-      await new Promise<void>((res, rej) => {
-        transaction.oncomplete = () => res();
-        transaction.onerror = () => rej(transaction.error);
-      });
-    }
-
-    console.log('POS bidirectional database sync complete.');
   } catch (err) {
-    console.warn('POS bidirectional database sync failed:', err);
-    throw err;
+    console.warn('Backend sync pull failed, trying direct sheet fallback:', err);
   }
+
+  // Fallback: Fetch directly from client using settings.googleSheetsUrl
+  if (!fetchedData) {
+    try {
+      const settings = await getSettings();
+      if (settings && settings.googleSheetsUrl) {
+        const response = await fetch(settings.googleSheetsUrl);
+        if (response.ok) {
+          fetchedData = await response.json();
+          console.log('Fetched sync data via direct client-side fallback.');
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn('Direct client sheet pull fallback failed:', fallbackErr);
+      throw fallbackErr;
+    }
+  }
+
+  if (!fetchedData) {
+    throw new Error('No sync URL configured or connection failed.');
+  }
+
+  const data = fetchedData;
+
+  // 1. Merge Active Customers (Overwrite with latest remote roster)
+  if (data.customers && Array.isArray(data.customers)) {
+    const { store, transaction } = await getStore('customers', 'readwrite');
+    store.clear();
+    for (const c of data.customers) {
+      store.put(c);
+    }
+    await new Promise<void>((res, rej) => {
+      transaction.oncomplete = () => res();
+      transaction.onerror = () => rej(transaction.error);
+    });
+  }
+
+  // 2. Merge Bills (Insert missing history records, preserve local edits)
+  if (data.bills && Array.isArray(data.bills)) {
+    const { store, transaction } = await getStore('bills', 'readwrite');
+    for (const b of data.bills) {
+      store.put(b);
+    }
+    await new Promise<void>((res, rej) => {
+      transaction.oncomplete = () => res();
+      transaction.onerror = () => rej(transaction.error);
+    });
+  }
+
+  console.log('POS bidirectional database sync complete.');
 };
