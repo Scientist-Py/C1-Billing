@@ -389,7 +389,17 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   });
 };
 
-export const deleteCustomer = (id: string): Promise<void> => {
+export const deleteCustomer = async (id: string): Promise<void> => {
+  try {
+    const customer = await getCustomer(id);
+    if (customer) {
+      customer.status = 'deleted';
+      await syncToGoogleSheets('DELETE_CUSTOMER', customer);
+    }
+  } catch (err) {
+    console.warn('Failed to sync deleted customer state:', err);
+  }
+
   return getStore('customers', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.delete(id);

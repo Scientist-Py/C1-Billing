@@ -28,7 +28,7 @@ export interface OrderedItem {
 
 export type SeatingLocation = 'Main Hall' | 'Basement' | 'Takeaway';
 
-export type CustomerStatus = 'active' | 'completed';
+export type CustomerStatus = 'active' | 'completed' | 'deleted';
 
 export interface Customer {
   id: string;

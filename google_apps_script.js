@@ -25,7 +25,10 @@ function doGet(e) {
         var rawJson = data[i][7];
         if (rawJson) {
           try {
-            customers.push(JSON.parse(rawJson));
+            var cust = JSON.parse(rawJson);
+            if (cust.status !== 'deleted') {
+              customers.push(cust);
+            }
           } catch(e) {
             // Fallback if not valid JSON
           }
@@ -202,6 +205,25 @@ function doPost(e) {
           for (var r = 0; r < values.length; r++) {
             if (values[r][0] === payload.billNumber) {
               salesSheet.deleteRow(r + 2);
+              break;
+            }
+          }
+        }
+      }
+      createOrUpdateDashboard(ss);
+
+    } else if (action === 'DELETE_CUSTOMER') {
+      var sheet = ss.getSheetByName("Active CheckIns");
+      if (sheet) {
+        var lastRow = sheet.getLastRow();
+        if (lastRow > 1) {
+          var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+          for (var r = 0; r < ids.length; r++) {
+            if (ids[r][0] === payload.id) {
+              var rowIndex = r + 2;
+              payload.status = 'deleted';
+              sheet.getRange(rowIndex, 7).setValue("DELETED");
+              sheet.getRange(rowIndex, 8).setValue(JSON.stringify(payload));
               break;
             }
           }
