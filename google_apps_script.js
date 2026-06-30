@@ -209,6 +209,21 @@ function doPost(e) {
       }
       createOrUpdateDashboard(ss);
 
+    } else if (action === 'CLEAR_DATABASE') {
+      var activeSheet = ss.getSheetByName("Active CheckIns");
+      if (activeSheet && activeSheet.getLastRow() > 1) {
+        activeSheet.deleteRows(2, activeSheet.getLastRow() - 1);
+      }
+      var salesSheet = ss.getSheetByName("Sales & Bills");
+      if (salesSheet && salesSheet.getLastRow() > 1) {
+        salesSheet.deleteRows(2, salesSheet.getLastRow() - 1);
+      }
+      var auditSheet = ss.getSheetByName("Audit Logs");
+      if (auditSheet && auditSheet.getLastRow() > 1) {
+        auditSheet.deleteRows(2, auditSheet.getLastRow() - 1);
+      }
+      createOrUpdateDashboard(ss);
+
     } else if (action === 'AUDIT') {
       var auditSheet = getOrCreateSheet(ss, "Audit Logs", 3);
       setupHeaders(auditSheet, ["Timestamp", "User ID", "Cashier", "Action", "Details"]);

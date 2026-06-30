@@ -744,3 +744,37 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
     return { success: false, message: err instanceof Error ? err.message : String(err) };
   }
 };
+
+export const purgeAllData = async (): Promise<void> => {
+  const storesToClear = ['customers', 'bills', 'auditLogs'];
+  for (const storeName of storesToClear) {
+    await new Promise<void>(async (resolveStore) => {
+      try {
+        const { store } = await getStore(storeName, 'readwrite');
+        const req = store.clear();
+        req.onsuccess = () => resolveStore();
+        req.onerror = () => resolveStore();
+      } catch {
+        resolveStore();
+      }
+    });
+  }
+
+  // Trigger Google Sheets remote clear
+  try {
+    const settings = await getSettings();
+    if (settings && settings.googleSheetsUrl) {
+      await fetch(settings.googleSheetsUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'CLEAR_DATABASE', payload: {} }),
+        keepalive: true
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to clear remote Google Sheet:', err);
+  }
+};

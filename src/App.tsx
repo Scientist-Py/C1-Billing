@@ -13,7 +13,7 @@ import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill, OrderedItem } from './types';
-import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets } from './utils/db';
+import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets, purgeAllData } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Laptop } from 'lucide-react';
 
@@ -127,6 +127,17 @@ function App() {
     const initializeApp = async () => {
       try {
         await initDB();
+
+        // Database purge trigger via URL parameter (?purge=true)
+        if (window.location.search.includes('purge=true')) {
+          await purgeAllData();
+          localStorage.clear();
+          sessionStorage.clear();
+          // Redirect to clean landing page URL
+          window.location.href = window.location.origin + window.location.pathname;
+          return;
+        }
+
         await seedDefaultData();
         const cafeSettings = await getSettings();
         if (cafeSettings) {
