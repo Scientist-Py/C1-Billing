@@ -288,13 +288,15 @@ function App() {
         filteredList = list.filter(c => c.cashierId === currentUser.id);
       }
 
-      // Preserve the temporary anonymous customer cart if one is currently active
-      const activeTemp = activeCustomers.find(c => c.id.startsWith('temp_'));
-      if (activeTemp) {
-        filteredList = [...filteredList, activeTemp];
-      }
-
-      setActiveCustomers(filteredList);
+      setActiveCustomers((prev) => {
+        // Preserve the temporary anonymous customer cart using the latest state reference
+        const activeTemp = prev.find(c => c.id.startsWith('temp_'));
+        if (activeTemp) {
+          const withoutTemp = filteredList.filter(c => c.id !== activeTemp.id);
+          return [...withoutTemp, activeTemp];
+        }
+        return filteredList;
+      });
     } catch (err) {
       console.error('Error reloading active seating data', err);
     }
