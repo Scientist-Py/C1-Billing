@@ -12,6 +12,7 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
+import { Inventory } from './components/Inventory';
 import type { User, Customer, CafeSettings, Bill, OrderedItem } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets, purgeAllData } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
@@ -529,6 +530,9 @@ function App() {
               )}
               {currentTab === 'menu' && (
                 <MenuManagement currentUser={currentUser} settings={settings} />
+              )}
+              {currentTab === 'inventory' && (
+                <Inventory currentUser={currentUser} settings={settings} />
               )}
               {currentTab === 'reports' && (
                 <Reports settings={settings} />

@@ -1,7 +1,7 @@
-import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User } from '../types';
+import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User, InventoryItem, InventoryLog } from '../types';
 
 const DB_NAME = 'ChapterOneCafeDB';
-const DB_VERSION = 1;
+const DB_VERSION = 4;
 
 let dbInstance: IDBDatabase | null = null;
 
@@ -80,6 +80,16 @@ export const initDB = (): Promise<IDBDatabase> => {
       // Create Users store
       if (!db.objectStoreNames.contains('users')) {
         db.createObjectStore('users', { keyPath: 'id' });
+      }
+
+      // Create Inventory store
+      if (!db.objectStoreNames.contains('inventory')) {
+        db.createObjectStore('inventory', { keyPath: 'id' });
+      }
+
+      // Create Inventory Logs store
+      if (!db.objectStoreNames.contains('inventoryLogs')) {
+        db.createObjectStore('inventoryLogs', { keyPath: 'id' });
       }
     };
   });
@@ -258,6 +268,31 @@ export const seedDefaultData = async () => {
       await saveMenuItem(item);
     }
   }
+
+  // 4. Seed Inventory
+  const currentInv = await getInventory();
+  if (currentInv.length === 0) {
+    const defaultInventory: InventoryItem[] = [
+      { id: "inv_1", name: "Water Bottle", quantity: 50, unit: "Pcs", minStock: 10, lastUpdated: new Date().toISOString() },
+      { id: "inv_2", name: "Cheese Slice", quantity: 120, unit: "Pcs", minStock: 20, lastUpdated: new Date().toISOString() },
+      { id: "inv_3", name: "Pizza Cheese Pack", quantity: 30, unit: "Pcs", minStock: 5, lastUpdated: new Date().toISOString() },
+      { id: "inv_4", name: "Burger Bun", quantity: 80, unit: "Pcs", minStock: 15, lastUpdated: new Date().toISOString() },
+      { id: "inv_5", name: "Coffee Beans", quantity: 10, unit: "Kg", minStock: 2, lastUpdated: new Date().toISOString() }
+    ];
+    for (const item of defaultInventory) {
+      await saveInventoryItem(item);
+      await addInventoryLog({
+        id: `invlog_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        itemId: item.id,
+        itemName: item.name,
+        quantityAdjusted: item.quantity,
+        type: 'restock',
+        reason: 'Initial Seeding Stock',
+        timestamp: new Date().toISOString(),
+        user: 'System'
+      });
+    }
+  }
 };
 
 // === SETTINGS ACTIONS ===
@@ -319,6 +354,103 @@ export const authenticatePin = async (pin: string): Promise<User | null> => {
   const users = await getUsers();
   const matched = users.find((u) => u.pin === pin);
   return matched || null;
+};
+
+// === INVENTORY ACTIONS ===
+export const getInventory = (): Promise<InventoryItem[]> => {
+  return getStore('inventory').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const getInventoryItem = (id: string): Promise<InventoryItem | null> => {
+  return getStore('inventory').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const saveInventoryItem = (item: InventoryItem): Promise<void> => {
+  return getStore('inventory', 'readwrite').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.put(item);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const deleteInventoryItem = (id: string): Promise<void> => {
+  return getStore('inventory', 'readwrite').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const getInventoryLogs = (): Promise<InventoryLog[]> => {
+  return getStore('inventoryLogs').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const logs = request.result || [];
+        // Sort newest logs first
+        logs.sort((a: InventoryLog, b: InventoryLog) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        resolve(logs);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const addInventoryLog = (log: InventoryLog): Promise<void> => {
+  return getStore('inventoryLogs', 'readwrite').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.put(log);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const adjustStock = async (
+  itemId: string,
+  quantityAdjusted: number,
+  type: InventoryLog['type'],
+  reason: string,
+  user: string
+): Promise<void> => {
+  const item = await getInventoryItem(itemId);
+  if (!item) throw new Error('Inventory item not found');
+
+  item.quantity = Math.max(0, item.quantity + quantityAdjusted);
+  item.lastUpdated = new Date().toISOString();
+  await saveInventoryItem(item);
+
+  const log: InventoryLog = {
+    id: `invlog_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    itemId,
+    itemName: item.name,
+    quantityAdjusted,
+    type,
+    reason,
+    timestamp: new Date().toISOString(),
+    user
+  };
+  await addInventoryLog(log);
+
+  // Sync state in background to Google Sheets
+  syncToGoogleSheets('SAVE_INVENTORY', item);
+  syncToGoogleSheets('LOG_INVENTORY', log);
 };
 
 // === MENU ACTIONS ===
@@ -775,6 +907,66 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
       });
     });
 
+    // 3. Clear and merge Inventory Items
+    if (result.inventory && Array.isArray(result.inventory)) {
+      const remoteInventory = result.inventory as InventoryItem[];
+      await getStore('inventory', 'readwrite').then(({ store }) => {
+        return new Promise<void>((resolve, reject) => {
+          const clearReq = store.clear();
+          clearReq.onsuccess = () => {
+            if (remoteInventory.length === 0) {
+              resolve();
+              return;
+            }
+            let count = 0;
+            let hasFailed = false;
+            for (const item of remoteInventory) {
+              const req = store.put(item);
+              req.onsuccess = () => {
+                count++;
+                if (count === remoteInventory.length && !hasFailed) resolve();
+              };
+              req.onerror = () => {
+                hasFailed = true;
+                reject(req.error);
+              };
+            }
+          };
+          clearReq.onerror = () => reject(clearReq.error);
+        });
+      });
+    }
+
+    // 4. Clear and merge Inventory Logs
+    if (result.inventoryLogs && Array.isArray(result.inventoryLogs)) {
+      const remoteInventoryLogs = result.inventoryLogs as InventoryLog[];
+      await getStore('inventoryLogs', 'readwrite').then(({ store }) => {
+        return new Promise<void>((resolve, reject) => {
+          const clearReq = store.clear();
+          clearReq.onsuccess = () => {
+            if (remoteInventoryLogs.length === 0) {
+              resolve();
+              return;
+            }
+            let count = 0;
+            let hasFailed = false;
+            for (const log of remoteInventoryLogs) {
+              const req = store.put(log);
+              req.onsuccess = () => {
+                count++;
+                if (count === remoteInventoryLogs.length && !hasFailed) resolve();
+              };
+              req.onerror = () => {
+                hasFailed = true;
+                reject(req.error);
+              };
+            }
+          };
+          clearReq.onerror = () => reject(clearReq.error);
+        });
+      });
+    }
+
     return { success: true };
   } catch (err) {
     console.error('Failed to pull and merge from Google Sheets:', err);
@@ -783,7 +975,7 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
 };
 
 export const purgeAllData = async (): Promise<void> => {
-  const storesToClear = ['customers', 'bills', 'auditLogs'];
+  const storesToClear = ['customers', 'bills', 'auditLogs', 'inventory', 'inventoryLogs'];
   for (const storeName of storesToClear) {
     await new Promise<void>(async (resolveStore) => {
       try {

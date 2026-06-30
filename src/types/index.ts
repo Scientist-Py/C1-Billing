@@ -100,3 +100,23 @@ export interface AuditLog {
   action: string;
   details: string;
 }
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  minStock: number;
+  lastUpdated: string;
+}
+
+export interface InventoryLog {
+  id: string;
+  itemId: string;
+  itemName: string;
+  quantityAdjusted: number;
+  type: 'restock' | 'consumption' | 'waste' | 'adjustment';
+  reason: string;
+  timestamp: string;
+  user: string;
+}

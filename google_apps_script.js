@@ -53,11 +53,45 @@ function doGet(e) {
         }
       }
     }
+
+    // 3. Fetch Inventory Items
+    var invSheet = ss.getSheetByName("Inventory Items");
+    var inventory = [];
+    if (invSheet && invSheet.getLastRow() > 1) {
+      var lastRowInv = invSheet.getLastRow();
+      var data = invSheet.getRange(2, 1, lastRowInv - 1, 7).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rawJson = data[i][6];
+        if (rawJson) {
+          try {
+            inventory.push(JSON.parse(rawJson));
+          } catch(e) {}
+        }
+      }
+    }
+
+    // 4. Fetch Inventory Logs
+    var invLogsSheet = ss.getSheetByName("Inventory Logs");
+    var inventoryLogs = [];
+    if (invLogsSheet && invLogsSheet.getLastRow() > 1) {
+      var lastRowInvLogs = invLogsSheet.getLastRow();
+      var data = invLogsSheet.getRange(2, 1, lastRowInvLogs - 1, 9).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rawJson = data[i][8];
+        if (rawJson) {
+          try {
+            inventoryLogs.push(JSON.parse(rawJson));
+          } catch(e) {}
+        }
+      }
+    }
     
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
       customers: customers,
-      bills: bills
+      bills: bills,
+      inventory: inventory,
+      inventoryLogs: inventoryLogs
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
@@ -235,6 +269,54 @@ function doPost(e) {
       }
       createOrUpdateDashboard(ss);
 
+    } else if (action === 'SAVE_INVENTORY') {
+      var sheet = getOrCreateSheet(ss, "Inventory Items", 6);
+      setupHeaders(sheet, ["Item ID", "Name", "Quantity", "Unit", "Min Stock", "Last Updated", "Raw JSON"]);
+      
+      var lastRow = sheet.getLastRow();
+      var foundIndex = -1;
+      if (lastRow > 1) {
+        var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]).trim() === String(payload.id).trim()) {
+            foundIndex = i + 2;
+            break;
+          }
+        }
+      }
+      
+      var rowData = [
+        payload.id,
+        payload.name,
+        payload.quantity,
+        payload.unit,
+        payload.minStock,
+        payload.lastUpdated,
+        JSON.stringify(payload)
+      ];
+      
+      if (foundIndex > -1) {
+        sheet.getRange(foundIndex, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        sheet.appendRow(rowData);
+      }
+
+    } else if (action === 'LOG_INVENTORY') {
+      var sheet = getOrCreateSheet(ss, "Inventory Logs", 7);
+      setupHeaders(sheet, ["Log ID", "Item ID", "Item Name", "Adjusted Qty", "Type", "Reason", "Timestamp", "User", "Raw JSON"]);
+      
+      sheet.appendRow([
+        payload.id,
+        payload.itemId,
+        payload.itemName,
+        payload.quantityAdjusted,
+        payload.type,
+        payload.reason,
+        payload.timestamp,
+        payload.user,
+        JSON.stringify(payload)
+      ]);
+
     } else if (action === 'CLEAR_DATABASE') {
       var activeSheet = ss.getSheetByName("Active CheckIns");
       if (activeSheet && activeSheet.getLastRow() > 1) {
@@ -247,6 +329,14 @@ function doPost(e) {
       var auditSheet = ss.getSheetByName("Audit Logs");
       if (auditSheet && auditSheet.getLastRow() > 1) {
         auditSheet.deleteRows(2, auditSheet.getLastRow() - 1);
+      }
+      var invSheet = ss.getSheetByName("Inventory Items");
+      if (invSheet && invSheet.getLastRow() > 1) {
+        invSheet.deleteRows(2, invSheet.getLastRow() - 1);
+      }
+      var invLogsSheet = ss.getSheetByName("Inventory Logs");
+      if (invLogsSheet && invLogsSheet.getLastRow() > 1) {
+        invLogsSheet.deleteRows(2, invLogsSheet.getLastRow() - 1);
       }
       createOrUpdateDashboard(ss);
 

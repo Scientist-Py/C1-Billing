@@ -6,7 +6,8 @@ import {
   Utensils, 
   BarChart3, 
   Settings, 
-  LogOut
+  LogOut,
+  Boxes
 } from 'lucide-react';
 import type { User } from '../types';
 import logo from '../assets/logo.jpg';
@@ -31,6 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'active', label: 'Active Seating', icon: Users, roles: ['admin', 'manager', 'staff'], badge: activeTimersCount },
     { id: 'history', label: 'Billing History', icon: History, roles: ['admin', 'manager', 'staff'] },
     { id: 'menu', label: 'Menu Catalog', icon: Utensils, roles: ['admin', 'manager'] },
+    { id: 'inventory', label: 'Inventory Stock', icon: Boxes, roles: ['admin'] },
     { id: 'reports', label: 'Sales Reports', icon: BarChart3, roles: ['admin'] },
     { id: 'settings', label: 'System Settings', icon: Settings, roles: ['admin'] },
   ];

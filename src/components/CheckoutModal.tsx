@@ -10,7 +10,7 @@ import {
   Share2
 } from 'lucide-react';
 import type { Customer, Bill, CafeSettings, PaymentMethod, PaymentDetails } from '../types';
-import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, getBills, calculateBasementCharge } from '../utils/db';
+import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, getBills, calculateBasementCharge, getInventory, adjustStock } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { generateAIWhatsAppMessage } from '../utils/ai';
 import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
@@ -207,6 +207,56 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         'CHECKOUT_CUSTOMER',
         `Settled bill ${assignedBillNumber} for ${customer.name}. Grand Total: ${settings.currency}${finalGrandTotal.toFixed(2)} (${paymentMethod}, Status: ${paymentStatus})`
       );
+
+      // 4. Automated Inventory Consumption
+      try {
+        const currentInventory = await getInventory();
+        for (const item of finalizedBill.orderedItems) {
+          // Rule 1: Water Bottle
+          if (item.name.toLowerCase().includes('water bottle')) {
+            const match = currentInventory.find(i => i.name.toLowerCase() === 'water bottle');
+            if (match) {
+              await adjustStock(
+                match.id,
+                -item.quantity,
+                'consumption',
+                `Automated Checkout: sold ${item.quantity} Water Bottle(s) (Bill ${assignedBillNumber})`,
+                currentUser.username
+              );
+            }
+          }
+          
+          // Rule 2: Burger with Extra Cheese Slice
+          if (item.name.toLowerCase().includes('burger') && item.name.includes('(Extra Cheese Slice)')) {
+            const match = currentInventory.find(i => i.name.toLowerCase() === 'cheese slice');
+            if (match) {
+              await adjustStock(
+                match.id,
+                -item.quantity,
+                'consumption',
+                `Automated Checkout: added ${item.quantity} Cheese Slice(s) (Bill ${assignedBillNumber})`,
+                currentUser.username
+              );
+            }
+          }
+
+          // Rule 3: Pizza with Extra Cheese
+          if (item.name.toLowerCase().includes('pizza') && item.name.includes('(Extra Cheese)')) {
+            const match = currentInventory.find(i => i.name.toLowerCase() === 'pizza cheese pack');
+            if (match) {
+              await adjustStock(
+                match.id,
+                -item.quantity,
+                'consumption',
+                `Automated Checkout: added ${item.quantity} Pizza Cheese Pack(s) (Bill ${assignedBillNumber})`,
+                currentUser.username
+              );
+            }
+          }
+        }
+      } catch (invErr) {
+        console.warn('Failed to perform automated inventory consumption:', invErr);
+      }
 
       setGeneratedBill(finalizedBill);
       setIsSuccess(true);

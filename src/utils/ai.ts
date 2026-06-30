@@ -466,3 +466,72 @@ export const speakText = async (text: string, geminiApiKey?: string) => {
   }
 };
 
+/**
+ * Generate AI-driven inventory audits and restock recommendations via Groq.
+ */
+export const generateAIInventoryInsights = async (
+  inventory: any[],
+  logs: any[],
+  apiKey: string
+): Promise<string> => {
+  if (!apiKey || apiKey.trim().length === 0) {
+    return 'Groq API Key is not configured. Please set your API key in settings to enable AI Inventory Insights.';
+  }
+
+  const itemsText = inventory.map(item => 
+    `- ${item.name}: ${item.quantity} ${item.unit} (Alert threshold: ${item.minStock} ${item.unit})`
+  ).join('\n');
+
+  const recentLogsText = logs.slice(0, 15).map(log =>
+    `- [${new Date(log.timestamp).toLocaleDateString()}] ${log.itemName} adjusted by ${log.quantityAdjusted} (${log.type}) - ${log.reason}`
+  ).join('\n');
+
+  const systemPrompt = `You are a professional AI Stock Auditor and Inventory Consultant at Chapter One Cafe.
+Your task is to analyze the current stock status and recent transaction logs of our cafe ingredients, and provide a highly useful, professional, and readable stock report.
+
+Format your output in clean, readable WhatsApp-style markdown using these sections:
+1. ⚠️ *CRITICAL STOCK ALERTS* - List items that are below or very close to their alert threshold, or that we might run out of.
+2. 📈 *USAGE AND WASTE REPORT* - Analyze usage patterns from logs (sales vs wastage/spoiled logs). Point out any high wastage items.
+3. 🛒 *PREDICTIVE RESTOCK PLAN* - Recommend exactly which items we should order now and what quantities (be specific, e.g. "Order 40 units of Water Bottles to cover next week's sales").
+4. 💡 *OPERATIONAL EFFICIENCY TIPS* - Give 1-2 quick tips to improve kitchen efficiency, reduce wastage, or optimize raw material spending.
+
+Keep your response professional, warm, concise (approx 200-300 words), and highly actionable. Use emojis (📦, 🧀, ☕, 🍟, 📈, 🚨) to structure the sections beautifully. Do not include markdown titles like # or ##; use bold lines (e.g. *SECTION NAME*) instead.`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 7000); // 7 second timeout
+
+  const url = '/api-groq/openai/v1/chat/completions';
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Here is the current inventory status:\n${itemsText}\n\nRecent logs:\n${recentLogsText}` }
+        ],
+        temperature: 0.7
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Groq API returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn("Groq AI inventory insights failed or timed out:", err);
+    return '⚠️ *AI Insights Unavailable*\n\nThe request to Groq API timed out or failed. Please check your API key and internet connection, then try again.';
+  }
+};
+
