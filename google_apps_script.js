@@ -185,7 +185,12 @@ function doPost(e) {
         if (lastRowCheckin > 1) {
           var values = checkinSheet.getRange(2, 1, lastRowCheckin - 1, 3).getValues();
           for (var r = 0; r < values.length; r++) {
-            if (values[r][0] === payload.customerId || values[r][2] === payload.customerPhone) {
+            var sheetCustId = values[r][0] ? values[r][0].toString().trim() : "";
+            var sheetPhone = values[r][2] ? values[r][2].toString().trim() : "";
+            var targetCustId = payload.customerId ? payload.customerId.toString().trim() : "";
+            var targetPhone = payload.customerPhone ? payload.customerPhone.toString().trim() : "";
+            
+            if ((targetCustId && sheetCustId === targetCustId) || (targetPhone && sheetPhone === targetPhone)) {
               checkinSheet.deleteRow(r + 2);
               break;
             }
@@ -203,7 +208,9 @@ function doPost(e) {
         if (lastRowSales > 1) {
           var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
           for (var r = 0; r < values.length; r++) {
-            if (values[r][0] === payload.billNumber) {
+            var sheetBillNum = values[r][0] ? values[r][0].toString().trim() : "";
+            var targetBillNum = payload.billNumber ? payload.billNumber.toString().trim() : "";
+            if (sheetBillNum === targetBillNum) {
               salesSheet.deleteRow(r + 2);
               break;
             }
@@ -219,7 +226,9 @@ function doPost(e) {
         if (lastRow > 1) {
           var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
           for (var r = 0; r < ids.length; r++) {
-            if (ids[r][0] === payload.id) {
+            var sheetId = ids[r][0] ? ids[r][0].toString().trim() : "";
+            var targetId = payload.id ? payload.id.toString().trim() : "";
+            if (sheetId === targetId) {
               var rowIndex = r + 2;
               payload.status = 'deleted';
               sheet.getRange(rowIndex, 7).setValue("DELETED");
