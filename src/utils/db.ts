@@ -687,7 +687,10 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
   }
 
   try {
-    const response = await fetch(settings.googleSheetsUrl, {
+    const sheetsUrl = settings.googleSheetsUrl;
+    const separator = sheetsUrl.includes('?') ? '&' : '?';
+    const cacheBusterUrl = `${sheetsUrl}${separator}_t=${Date.now()}`;
+    const response = await fetch(cacheBusterUrl, {
       method: 'GET'
     });
     if (!response.ok) {

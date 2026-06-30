@@ -184,15 +184,15 @@ function doPost(e) {
         var lastRowCheckin = checkinSheet.getLastRow();
         if (lastRowCheckin > 1) {
           var values = checkinSheet.getRange(2, 1, lastRowCheckin - 1, 3).getValues();
-          for (var r = 0; r < values.length; r++) {
-            var sheetCustId = values[r][0] ? values[r][0].toString().trim() : "";
-            var sheetPhone = values[r][2] ? values[r][2].toString().trim() : "";
-            var targetCustId = payload.customerId ? payload.customerId.toString().trim() : "";
-            var targetPhone = payload.customerPhone ? payload.customerPhone.toString().trim() : "";
+          // Loop backwards to safely delete matching rows
+          for (var r = values.length - 1; r >= 0; r--) {
+            var rowId = String(values[r][0]).trim();
+            var rowPhone = String(values[r][2]).trim();
+            var targetId = String(payload.customerId).trim();
+            var targetPhone = String(payload.customerPhone).trim();
             
-            if ((targetCustId && sheetCustId === targetCustId) || (targetPhone && sheetPhone === targetPhone)) {
+            if (rowId === targetId || (targetPhone && rowPhone === targetPhone)) {
               checkinSheet.deleteRow(r + 2);
-              break;
             }
           }
         }
@@ -208,9 +208,7 @@ function doPost(e) {
         if (lastRowSales > 1) {
           var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
           for (var r = 0; r < values.length; r++) {
-            var sheetBillNum = values[r][0] ? values[r][0].toString().trim() : "";
-            var targetBillNum = payload.billNumber ? payload.billNumber.toString().trim() : "";
-            if (sheetBillNum === targetBillNum) {
+            if (values[r][0] === payload.billNumber) {
               salesSheet.deleteRow(r + 2);
               break;
             }
@@ -225,15 +223,12 @@ function doPost(e) {
         var lastRow = sheet.getLastRow();
         if (lastRow > 1) {
           var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-          for (var r = 0; r < ids.length; r++) {
-            var sheetId = ids[r][0] ? ids[r][0].toString().trim() : "";
-            var targetId = payload.id ? payload.id.toString().trim() : "";
-            if (sheetId === targetId) {
+          for (var r = ids.length - 1; r >= 0; r--) {
+            if (String(ids[r][0]).trim() === String(payload.id).trim()) {
               var rowIndex = r + 2;
               payload.status = 'deleted';
               sheet.getRange(rowIndex, 7).setValue("DELETED");
               sheet.getRange(rowIndex, 8).setValue(JSON.stringify(payload));
-              break;
             }
           }
         }
