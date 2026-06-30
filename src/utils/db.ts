@@ -267,13 +267,11 @@ export const getSettings = (): Promise<CafeSettings | null> => {
       request.onsuccess = () => {
         if (request.result && request.result.value) {
           const settings = request.result.value;
-          // Re-assemble split environment variables to bypass GitHub secret scanning push protection rules
-          const groqKey = (import.meta.env.VITE_GROQ_API_KEY_PART1 || '') + (import.meta.env.VITE_GROQ_API_KEY_PART2 || '');
-          const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY_PART1 || '') + (import.meta.env.VITE_GEMINI_API_KEY_PART2 || '');
+          const groqKey = import.meta.env.VITE_GROQ_API_KEY || '';
           const sheetsUrl = import.meta.env.VITE_GOOGLE_SHEETS_URL || '';
 
           settings.groqApiKey = groqKey || settings.groqApiKey || '';
-          settings.geminiApiKey = geminiKey || settings.geminiApiKey || '';
+          settings.geminiApiKey = ''; // Disabled voice API keys
           settings.googleSheetsUrl = sheetsUrl || settings.googleSheetsUrl || '';
           resolve(settings);
         } else {

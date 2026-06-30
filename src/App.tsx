@@ -13,10 +13,9 @@ import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
-import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets } from './utils/db';
-import { generateWelcomeGreeting, speakText } from './utils/ai';
+import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
-import { ShieldAlert, Play, Laptop } from 'lucide-react';
+import { ShieldAlert, Laptop } from 'lucide-react';
 
 const checkIsWindows = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -28,42 +27,17 @@ const checkIsWindows = (): boolean => {
 const IS_WINDOWS_DEVICE = checkIsWindows();
 
 const AccessDeniedScreen = () => {
-  const [hasInteracted, setHasInteracted] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState('');
 
-  const getDeviceName = (): string => {
+  const getDeviceName = () => {
+    if (typeof window === 'undefined') return 'unknown device';
     const ua = window.navigator.userAgent;
-    if (/Android/i.test(ua)) return 'Android device';
     if (/iPhone/i.test(ua)) return 'iPhone';
     if (/iPad/i.test(ua)) return 'iPad';
-    if (/Macintosh/i.test(ua)) return 'Mac computer';
+    if (/Android/i.test(ua)) return 'Android device';
+    if (/Macintosh/i.test(ua)) return 'MacBook/Mac PC';
     if (/Linux/i.test(ua)) return 'Linux machine';
     return 'unauthorized device';
-  };
-
-  const speakWarning = (text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.resume();
-      window.speechSynthesis.cancel();
-
-      // Delay to let cancel clear the queue asynchronously in Chrome
-      setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        const voices = window.speechSynthesis.getVoices();
-        
-        const voice = voices.find(v => 
-          v.lang.startsWith('en') && 
-          (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Microsoft'))
-        ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-        
-        if (voice) {
-          utterance.voice = voice;
-        }
-        utterance.rate = 0.95;
-        utterance.pitch = 1.0;
-        window.speechSynthesis.speak(utterance);
-      }, 150);
-    }
   };
 
   useEffect(() => {
@@ -79,28 +53,6 @@ const AccessDeniedScreen = () => {
     const randomIndex = Math.floor(Math.random() * messages.length);
     const chosenText = messages[randomIndex];
     setSelectedMessage(chosenText);
-    speakWarning(chosenText);
-
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        speakWarning(chosenText);
-      };
-    }
-
-    const handleGlobalClick = () => {
-      speakWarning(chosenText);
-      setHasInteracted(true);
-      window.removeEventListener('click', handleGlobalClick);
-      window.removeEventListener('touchstart', handleGlobalClick);
-    };
-
-    window.addEventListener('click', handleGlobalClick);
-    window.addEventListener('touchstart', handleGlobalClick);
-
-    return () => {
-      window.removeEventListener('click', handleGlobalClick);
-      window.removeEventListener('touchstart', handleGlobalClick);
-    };
   }, []);
 
   return (
@@ -113,12 +65,13 @@ const AccessDeniedScreen = () => {
       <div className="w-full max-w-md p-8 border border-white/10 bg-white/5 backdrop-blur-3xl rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.4)] relative z-10 space-y-6 flex flex-col items-center">
         
         {/* Soft Glowing Circle with Lock Icon */}
-        <div className="w-18 h-18 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-pulse">
-          <ShieldAlert className="w-9 h-9" />
+        <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center text-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.2)] animate-pulse">
+          <ShieldAlert className="w-10 h-10" />
         </div>
 
+        {/* Dynamic header titles */}
         <div className="text-center space-y-2">
-          <h2 className="text-[#f5f5f7] text-xl font-bold tracking-tight">
+          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
             System Locked
           </h2>
           <p className="text-xs text-[#86868b] leading-relaxed max-w-xs mx-auto">
@@ -139,22 +92,6 @@ const AccessDeniedScreen = () => {
           <Laptop className="w-3.5 h-3.5 text-[#86868b]" />
           <span>Restricted Platform: <strong className="text-amber-400 font-semibold">{getDeviceName()}</strong></span>
         </div>
-
-        {/* Autoplay Voice Trigger Action (Glass Button) */}
-        {!hasInteracted && (
-          <button 
-            onClick={() => {
-              if (selectedMessage) {
-                speakWarning(selectedMessage);
-              }
-              setHasInteracted(true);
-            }}
-            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold border border-amber-500/30 rounded-xl transition-all text-xs cursor-pointer shadow-md"
-          >
-            <Play className="w-3 h-3 fill-amber-300" />
-            <span>PLAY SYSTEM AUDIBLE</span>
-          </button>
-        )}
 
         <div className="text-[10px] text-[#86868b] leading-relaxed font-light mt-1 text-center">
           Please contact Tushar Chauhan for POS access keys.
@@ -300,31 +237,9 @@ function App() {
     }
   }, [selectedCustomerId, activeCustomers]);
 
-  // Background Auto-Sync Timer (Pull updates from Google Sheets every 30 seconds)
+  // Reload and filter active seating list whenever the logged-in user changes
   useEffect(() => {
-    if (!currentUser) return;
-
-    // Run first sync immediately on login
-    const initialSync = async () => {
-      try {
-        await pullAndMergeFromGoogleSheets();
-        await reloadActiveCustomers();
-      } catch (err) {
-        console.warn('Initial background database sync failed:', err);
-      }
-    };
-    initialSync();
-
-    const interval = setInterval(async () => {
-      try {
-        await pullAndMergeFromGoogleSheets();
-        await reloadActiveCustomers();
-      } catch (err) {
-        console.warn('Background database sync interval failed:', err);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
+    reloadActiveCustomers();
   }, [currentUser]);
 
   const reloadActiveCustomers = async () => {
@@ -361,17 +276,7 @@ function App() {
       loginTime
     });
 
-    // Trigger dynamic AI Voice greeting in background (non-blocking)
-    (async () => {
-      try {
-        const apiKey = settings?.groqApiKey || '';
-        const geminiKey = settings?.geminiApiKey || '';
-        const greeting = await generateWelcomeGreeting(user.username, user.role, apiKey);
-        speakText(greeting, geminiKey);
-      } catch (err) {
-        console.warn('Voice welcome failed:', err);
-      }
-    })();
+
   };
 
   const handleLogout = async () => {
@@ -479,7 +384,6 @@ function App() {
         setTab={setTab}
         currency={settings.currency}
         currentUser={currentUser}
-        onSyncComplete={reloadActiveCustomers}
       />
 
       {/* Main Page Area */}

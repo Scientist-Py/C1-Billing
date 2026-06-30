@@ -10,84 +10,6 @@
  * 5. Copy the generated Web App URL and paste it into your POS settings.
  */
 
-function doGet(e) {
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // 1. Fetch Active Customers
-    var activeSheet = ss.getSheetByName("Active CheckIns");
-    var customers = [];
-    if (activeSheet) {
-      var activeData = activeSheet.getDataRange().getValues();
-      if (activeData.length > 1) {
-        for (var i = 1; i < activeData.length; i++) {
-          try {
-            var row = activeData[i];
-            if (row[0]) {
-              // Reconstruct from JSON in column 8, fallback to column cells
-              var raw = row[7] ? JSON.parse(row[7]) : {
-                id: row[0],
-                name: row[1],
-                phone: row[2],
-                location: row[3],
-                numGuests: parseInt(row[4]) || 1,
-                entryTime: new Date().toISOString(),
-                status: "active",
-                notes: row[6] || "",
-                orderedItems: []
-              };
-              customers.push(raw);
-            }
-          } catch(err) {}
-        }
-      }
-    }
-    
-    // 2. Fetch Bills
-    var billsSheet = ss.getSheetByName("Sales & Bills");
-    var bills = [];
-    if (billsSheet) {
-      var billsData = billsSheet.getDataRange().getValues();
-      if (billsData.length > 1) {
-        for (var j = 1; j < billsData.length; j++) {
-          try {
-            var rowB = billsData[j];
-            if (rowB[0]) {
-              // Reconstruct from JSON in column 16, fallback to column cells
-              var rawBill = rowB[15] ? JSON.parse(rowB[15]) : {
-                id: rowB[0],
-                customerId: rowB[0],
-                billNumber: rowB[0],
-                customerName: rowB[2],
-                customerPhone: rowB[3],
-                location: rowB[4],
-                date: rowB[1],
-                grandTotal: parseFloat(rowB[10]) || 0,
-                paymentMethod: rowB[11],
-                status: rowB[12],
-                cashierName: rowB[13] || "",
-                orderedItems: []
-              };
-              bills.push(rawBill);
-            }
-          } catch(err) {}
-        }
-      }
-    }
-    
-    var result = {
-      customers: customers,
-      bills: bills
-    };
-    
-    return ContentService.createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
@@ -99,21 +21,9 @@ function doPost(e) {
     
     if (action === 'CHECKIN') {
       var sheet = getOrCreateSheet(ss, "Active CheckIns", 1);
-      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes", "CustomerDataJSON"]);
+      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes"]);
       
       var checkInTime = formatTimeOnly(payload.entryTime);
-      
-      // Remove existing row with same customer ID first to support updates
-      var lastRowCheckin = sheet.getLastRow();
-      if (lastRowCheckin > 1) {
-        var values = sheet.getRange(2, 1, lastRowCheckin - 1, 1).getValues();
-        for (var r = 0; r < values.length; r++) {
-          if (values[r][0] === payload.id) {
-            sheet.deleteRow(r + 2);
-            break;
-          }
-        }
-      }
       
       sheet.appendRow([
         payload.id,
@@ -122,8 +32,7 @@ function doPost(e) {
         payload.location,
         payload.numGuests,
         checkInTime,
-        payload.notes,
-        JSON.stringify(payload)
+        payload.notes
       ]);
       
       // Apply styles
@@ -168,7 +77,7 @@ function doPost(e) {
       setupHeaders(salesSheet, [
         "Bill Number", "Date", "Name", "Phone", "Seating Area", 
         "Check-In", "Check-Out", "Time Spent", "Food Total", 
-        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered", "BillDataJSON"
+        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered"
       ]);
       
       salesSheet.appendRow([
@@ -186,8 +95,7 @@ function doPost(e) {
         payload.paymentMethod,
         payload.status,
         payload.cashierName,
-        itemsSummary,
-        JSON.stringify(payload)
+        itemsSummary
       ]);
 
       // Apply clean formatting
@@ -275,21 +183,6 @@ function doPost(e) {
       }
       
       formatStaffSheet(sheet);
-    } else if (action === 'DELETE_BILL') {
-      var salesSheet = ss.getSheetByName("Sales & Bills");
-      if (salesSheet) {
-        var lastRowSales = salesSheet.getLastRow();
-        if (lastRowSales > 1) {
-          var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
-          for (var r = 0; r < values.length; r++) {
-            if (values[r][0] === payload.billNumber || values[r][0] === payload.id) {
-              salesSheet.deleteRow(r + 2);
-              break;
-            }
-          }
-        }
-      }
-      createOrUpdateDashboard(ss);
     }
     
     return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
