@@ -28,6 +28,7 @@ interface DashboardProps {
   onSelectCustomer: (id: string) => void;
   settings: CafeSettings;
   currentUser: User;
+  lastSyncTime: number;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -35,7 +36,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewActiveClick,
   onSelectCustomer,
   settings,
-  currentUser
+  currentUser,
+  lastSyncTime
 }) => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [activeCustomers, setActiveCustomers] = useState<Customer[]>([]);
@@ -149,9 +151,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     };
 
     loadDashboardData();
-    const interval = setInterval(loadDashboardData, 10000); // Poll DB every 10s
-    return () => clearInterval(interval);
-  }, []);
+  }, [lastSyncTime]);
 
   // Timer Tick for Live timer updates on Dashboard
   useEffect(() => {

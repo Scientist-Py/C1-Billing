@@ -22,11 +22,13 @@ import { BillDetailsModal } from './BillDetailsModal';
 interface CustomerHistoryProps {
   settings: CafeSettings;
   currentUser: UserType;
+  lastSyncTime: number;
 }
 
 export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
   settings,
-  currentUser
+  currentUser,
+  lastSyncTime
 }) => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [search, setSearch] = useState('');
@@ -93,7 +95,7 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [lastSyncTime]);
 
   // Compute stats for a customer profile when a phone number is selected
   useEffect(() => {

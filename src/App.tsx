@@ -120,6 +120,7 @@ function App() {
   // Selected Customer details object
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isAutoLocked, setIsAutoLocked] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -252,6 +253,7 @@ function App() {
         const syncResult = await pullAndMergeFromGoogleSheets();
         if (syncResult.success) {
           await reloadActiveCustomers();
+          setLastSyncTime(Date.now());
         }
       } catch (err) {
         console.warn('Background sync error:', err);
@@ -432,6 +434,7 @@ function App() {
                   onSelectCustomer={handleSelectCustomer}
                   settings={settings}
                   currentUser={currentUser}
+                  lastSyncTime={lastSyncTime}
                 />
               )}
               {currentTab === 'active' && (
@@ -445,7 +448,11 @@ function App() {
                 />
               )}
               {currentTab === 'history' && (
-                <CustomerHistory settings={settings} currentUser={currentUser} />
+                <CustomerHistory
+                  settings={settings}
+                  currentUser={currentUser}
+                  lastSyncTime={lastSyncTime}
+                />
               )}
               {currentTab === 'menu' && (
                 <MenuManagement currentUser={currentUser} settings={settings} />
