@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, UserPlus, MapPin, Users, FileText } from 'lucide-react';
-import type { Customer, SeatingLocation, Bill } from '../types';
+import type { Customer, SeatingLocation, Bill, OrderedItem } from '../types';
 import { saveCustomer, saveAuditLog, syncToGoogleSheets, getBills, getActiveCustomers } from '../utils/db';
 
 interface NewCustomerModalProps {
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (newCustomer: Customer) => void;
   currentUser: { id: string; username: string; role: string };
+  preorderedItems?: OrderedItem[];
 }
 
 export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   onClose,
   onSuccess,
-  currentUser
+  currentUser,
+  preorderedItems
 }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -138,7 +140,7 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
       notes: notes.trim(),
       entryTime: new Date().toISOString(),
       status: 'active',
-      orderedItems: [],
+      orderedItems: preorderedItems || [],
       cashierId: currentUser.id,
       cashierName: currentUser.username
     };
@@ -154,7 +156,7 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
         'CHECKIN_CUSTOMER',
         `Checked in customer: ${newCustomer.name} (ID: ${newCustomer.id}, Location: ${location}, Guests: ${guests})`
       );
-      onSuccess();
+      onSuccess(newCustomer);
     } catch (err) {
       alert('Failed to register customer entry.');
     }

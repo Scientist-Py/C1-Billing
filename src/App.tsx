@@ -12,7 +12,7 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
-import type { User, Customer, CafeSettings, Bill } from './types';
+import type { User, Customer, CafeSettings, Bill, OrderedItem } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Laptop } from 'lucide-react';
@@ -121,6 +121,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isAutoLocked, setIsAutoLocked] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(Date.now());
+  const [preorderedItemsForCheckin, setPreorderedItemsForCheckin] = useState<OrderedItem[] | undefined>(undefined);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -271,13 +272,47 @@ function App() {
   const reloadActiveCustomers = async () => {
     try {
       const list = await getActiveCustomers();
+      let filteredList = list;
       if (currentUser && currentUser.role === 'staff') {
-        setActiveCustomers(list.filter(c => c.cashierId === currentUser.id));
-      } else {
-        setActiveCustomers(list);
+        filteredList = list.filter(c => c.cashierId === currentUser.id);
       }
+
+      // Preserve the temporary anonymous customer cart if one is currently active
+      const activeTemp = activeCustomers.find(c => c.id.startsWith('temp_'));
+      if (activeTemp) {
+        filteredList = [...filteredList, activeTemp];
+      }
+
+      setActiveCustomers(filteredList);
     } catch (err) {
       console.error('Error reloading active seating data', err);
+    }
+  };
+
+  const handleStartNewEntryOrdering = () => {
+    const placeholderCustomer: Customer = {
+      id: `temp_${Date.now()}`,
+      name: 'New Customer',
+      phone: '',
+      location: 'Main Hall',
+      numGuests: 1,
+      notes: '',
+      entryTime: new Date().toISOString(),
+      status: 'active',
+      orderedItems: [],
+      cashierId: currentUser?.id,
+      cashierName: currentUser?.username
+    };
+    setActiveCustomers((prev) => [...prev, placeholderCustomer]);
+    setSelectedCustomerId(placeholderCustomer.id);
+  };
+
+  const handleCheckoutOrCheckin = (cust: Customer) => {
+    if (cust.id.startsWith('temp_')) {
+      setPreorderedItemsForCheckin(cust.orderedItems);
+      setIsNewCustomerOpen(true);
+    } else {
+      handleCheckoutCustomer(cust);
     }
   };
 
@@ -364,11 +399,20 @@ function App() {
     playPaymentSound(); // Play payment success sound
   };
 
-  const handleNewCustomerSuccess = async () => {
+  const handleNewCustomerSuccess = async (newCust?: Customer) => {
+    // Remove temporary customer from active list
+    setActiveCustomers((prev) => prev.filter(c => !c.id.startsWith('temp_')));
     setIsNewCustomerOpen(false);
-    await reloadActiveCustomers();
+    setPreorderedItemsForCheckin(undefined);
     playEntrySound(); // Play entry chime sound
-    setTab('active'); // Switch to active customer list
+    
+    await reloadActiveCustomers();
+    
+    if (newCust) {
+      setSelectedCustomerId(newCust.id); // Go straight to their details view
+    } else {
+      setTab('active'); // Switch to active customer list
+    }
   };
 
   if (!IS_WINDOWS_DEVICE) {
@@ -404,7 +448,7 @@ function App() {
       {/* Header bar */}
       <Header
         title={selectedCustomerId ? 'Customer Session Detail' : currentTab}
-        onNewCustomerClick={() => setIsNewCustomerOpen(true)}
+        onNewCustomerClick={handleStartNewEntryOrdering}
         onSelectCustomer={handleSelectCustomer}
         onSelectBill={handleSelectBill}
         setTab={setTab}
@@ -419,9 +463,25 @@ function App() {
           {selectedCustomerId && selectedCustomer ? (
             <CustomerDetails
               customer={selectedCustomer}
-              onBack={() => setSelectedCustomerId(null)}
-              onUpdate={reloadActiveCustomers}
-              onCheckout={() => handleCheckoutCustomer(selectedCustomer)}
+              onBack={() => {
+                if (selectedCustomerId.startsWith('temp_')) {
+                  const confirmDiscard = window.confirm("Are you sure you want to discard this temporary order?");
+                  if (!confirmDiscard) return;
+                  // Remove from local list
+                  setActiveCustomers((prev) => prev.filter(c => c.id !== selectedCustomerId));
+                }
+                setSelectedCustomerId(null);
+              }}
+              onUpdate={(updatedCust) => {
+                if (updatedCust && updatedCust.id.startsWith('temp_')) {
+                  setActiveCustomers((prev) =>
+                    prev.map(c => c.id === updatedCust.id ? updatedCust : c)
+                  );
+                } else {
+                  reloadActiveCustomers();
+                }
+              }}
+              onCheckout={() => handleCheckoutOrCheckin(selectedCustomer)}
               settings={settings}
               currentUser={currentUser}
             />
@@ -429,7 +489,7 @@ function App() {
             <>
               {currentTab === 'dashboard' && (
                 <Dashboard
-                  onNewCustomerClick={() => setIsNewCustomerOpen(true)}
+                  onNewCustomerClick={handleStartNewEntryOrdering}
                   onViewActiveClick={() => setTab('active')}
                   onSelectCustomer={handleSelectCustomer}
                   settings={settings}
@@ -471,9 +531,13 @@ function App() {
       {/* New Customer Check-in Modal */}
       {isNewCustomerOpen && (
         <NewCustomerModal
-          onClose={() => setIsNewCustomerOpen(false)}
+          onClose={() => {
+            setIsNewCustomerOpen(false);
+            setPreorderedItemsForCheckin(undefined);
+          }}
           onSuccess={handleNewCustomerSuccess}
           currentUser={currentUser}
+          preorderedItems={preorderedItemsForCheckin}
         />
       )}
 

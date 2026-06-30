@@ -22,7 +22,7 @@ import { generateAIWhatsAppMessage } from '../utils/ai';
 interface CustomerDetailsProps {
   customer: Customer;
   onBack: () => void;
-  onUpdate: () => void;
+  onUpdate: (updatedCustomer?: Customer) => void;
   onCheckout: () => void;
   settings: CafeSettings;
   currentUser: { id: string; username: string; role: string };
@@ -284,8 +284,10 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
       orderedItems: updatedOrders
     };
 
-    await saveCustomer(updatedCustomer);
-    onUpdate();
+    if (!customer.id.startsWith('temp_')) {
+      await saveCustomer(updatedCustomer);
+    }
+    onUpdate(updatedCustomer);
   };
 
   // Adjust quantity
@@ -310,8 +312,10 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
       orderedItems: updatedOrders
     };
 
-    await saveCustomer(updatedCustomer);
-    onUpdate();
+    if (!customer.id.startsWith('temp_')) {
+      await saveCustomer(updatedCustomer);
+    }
+    onUpdate(updatedCustomer);
   };
 
   // Remove Item completely
@@ -320,8 +324,10 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
       ...customer,
       orderedItems: customer.orderedItems.filter((item) => item.id !== orderId)
     };
-    await saveCustomer(updatedCustomer);
-    onUpdate();
+    if (!customer.id.startsWith('temp_')) {
+      await saveCustomer(updatedCustomer);
+    }
+    onUpdate(updatedCustomer);
   };
 
   // Seating & Seating Totals
@@ -373,21 +379,42 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
               )}
             </div>
             <p className="text-xs text-apple-gray-300 font-medium mt-1">
-              Phone: {customer.phone} | Seating ID: {customer.id} | Guests: {customer.numGuests}
-              {_currentUser.role !== 'staff' && customer.cashierName && (
-                <> | Order Taken By: <span className="font-semibold text-orange-500">{customer.cashierName}</span></>
+              {customer.id.startsWith('temp_') ? (
+                <span className="text-apple-gray-250 italic">Anonymous Cart — Add food items to proceed to seating check-in.</span>
+              ) : (
+                <>
+                  Phone: {customer.phone} | Seating ID: {customer.id} | Guests: {customer.numGuests}
+                  {_currentUser.role !== 'staff' && customer.cashierName && (
+                    <> | Order Taken By: <span className="font-semibold text-orange-500">{customer.cashierName}</span></>
+                  )}
+                </>
               )}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onCheckout}
-          className="apple-btn-primary flex items-center gap-2"
-        >
-          <Receipt className="w-4 h-4" />
-          <span>Proceed to Checkout</span>
-        </button>
+        {customer.id.startsWith('temp_') ? (
+          <button
+            onClick={onCheckout}
+            disabled={customer.orderedItems.length === 0}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+              customer.orderedItems.length === 0 
+                ? 'bg-apple-gray-100 text-apple-gray-300 border border-apple-gray-100 cursor-not-allowed'
+                : 'bg-apple-gray-800 text-white hover:bg-black'
+            }`}
+          >
+            <Plus className="w-4 h-4" />
+            <span>Assign Table & Check-in</span>
+          </button>
+        ) : (
+          <button
+            onClick={onCheckout}
+            className="apple-btn-primary flex items-center gap-2"
+          >
+            <Receipt className="w-4 h-4" />
+            <span>Proceed to Checkout</span>
+          </button>
+        )}
       </div>
 
       {/* Main layout: 3 equal or structured columns */}
@@ -763,8 +790,10 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
                           orderedItems: updatedOrders
                         };
 
-                        await saveCustomer(updatedCustomer);
-                        onUpdate();
+                        if (!customer.id.startsWith('temp_')) {
+                          await saveCustomer(updatedCustomer);
+                        }
+                        onUpdate(updatedCustomer);
                         setSelectedPizzaGroup(null);
                       };
                       actualAddItem();
