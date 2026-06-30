@@ -244,6 +244,12 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Date-Time & Quick Actions */}
       <div className="flex items-center gap-6">
+        {/* Cloud status badge */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50/80 border border-green-100 rounded-full text-[10px] font-bold text-green-600 select-none">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+          <span>Live Cloud Active</span>
+        </div>
+
         {/* Live Date/Time widget */}
         <div className="hidden sm:flex items-center gap-4 text-xs text-apple-gray-300 font-medium">
           <div className="flex items-center gap-1.5">

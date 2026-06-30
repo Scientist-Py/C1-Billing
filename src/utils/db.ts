@@ -379,7 +379,11 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   return getStore('customers', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.put(customer);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        // Sync active customer orders and detail edits immediately to Google Sheets
+        syncToGoogleSheets('CHECKIN', customer);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   });
@@ -656,5 +660,87 @@ export const syncToGoogleSheets = async (action: string, payload: any): Promise<
     });
   } catch (err) {
     console.warn('Error in syncToGoogleSheets wrapper:', err);
+  }
+};
+
+export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean; message?: string }> => {
+  const settings = await getSettings();
+  if (!settings || !settings.googleSheetsUrl) {
+    return { success: false, message: 'Google Sheets URL not configured' };
+  }
+
+  try {
+    const response = await fetch(settings.googleSheetsUrl, {
+      method: 'GET'
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+    const result = await response.json();
+    if (result.status !== 'success') {
+      throw new Error(result.message || 'Sync failed on server');
+    }
+
+    const remoteCustomers = (result.customers || []) as Customer[];
+    const remoteBills = (result.bills || []) as Bill[];
+
+    // 1. Clear and merge Active Customers
+    await getStore('customers', 'readwrite').then(({ store }) => {
+      return new Promise<void>((resolve, reject) => {
+        const clearReq = store.clear();
+        clearReq.onsuccess = () => {
+          if (remoteCustomers.length === 0) {
+            resolve();
+            return;
+          }
+          let count = 0;
+          let hasFailed = false;
+          for (const c of remoteCustomers) {
+            const req = store.put(c);
+            req.onsuccess = () => {
+              count++;
+              if (count === remoteCustomers.length && !hasFailed) resolve();
+            };
+            req.onerror = () => {
+              hasFailed = true;
+              reject(req.error);
+            };
+          }
+        };
+        clearReq.onerror = () => reject(clearReq.error);
+      });
+    });
+
+    // 2. Clear and merge Bills
+    await getStore('bills', 'readwrite').then(({ store }) => {
+      return new Promise<void>((resolve, reject) => {
+        const clearReq = store.clear();
+        clearReq.onsuccess = () => {
+          if (remoteBills.length === 0) {
+            resolve();
+            return;
+          }
+          let count = 0;
+          let hasFailed = false;
+          for (const b of remoteBills) {
+            const req = store.put(b);
+            req.onsuccess = () => {
+              count++;
+              if (count === remoteBills.length && !hasFailed) resolve();
+            };
+            req.onerror = () => {
+              hasFailed = true;
+              reject(req.error);
+            };
+          }
+        };
+        clearReq.onerror = () => reject(clearReq.error);
+      });
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to pull and merge from Google Sheets:', err);
+    return { success: false, message: err instanceof Error ? err.message : String(err) };
   }
 };

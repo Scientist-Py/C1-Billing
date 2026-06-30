@@ -13,7 +13,7 @@ import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import type { User, Customer, CafeSettings, Bill } from './types';
-import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets } from './utils/db';
+import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Laptop } from 'lucide-react';
 
@@ -240,6 +240,30 @@ function App() {
   // Reload and filter active seating list whenever the logged-in user changes
   useEffect(() => {
     reloadActiveCustomers();
+  }, [currentUser]);
+
+  // Background live synchronization with Google Sheets
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Run immediately on login
+    const triggerSync = async () => {
+      try {
+        const syncResult = await pullAndMergeFromGoogleSheets();
+        if (syncResult.success) {
+          await reloadActiveCustomers();
+        }
+      } catch (err) {
+        console.warn('Background sync error:', err);
+      }
+    };
+    triggerSync();
+
+    const intervalId = window.setInterval(triggerSync, 15000); // 15 seconds polling
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [currentUser]);
 
   const reloadActiveCustomers = async () => {

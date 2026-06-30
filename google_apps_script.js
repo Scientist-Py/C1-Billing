@@ -10,6 +10,58 @@
  * 5. Copy the generated Web App URL and paste it into your POS settings.
  */
 
+function doGet(e) {
+  try {
+    var sheetId = SpreadsheetApp.getActiveSpreadsheet().getId();
+    var ss = SpreadsheetApp.openById(sheetId);
+    
+    // 1. Fetch active checkins
+    var activeSheet = ss.getSheetByName("Active CheckIns");
+    var customers = [];
+    if (activeSheet && activeSheet.getLastRow() > 1) {
+      var lastRow = activeSheet.getLastRow();
+      var data = activeSheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rawJson = data[i][7];
+        if (rawJson) {
+          try {
+            customers.push(JSON.parse(rawJson));
+          } catch(e) {
+            // Fallback if not valid JSON
+          }
+        }
+      }
+    }
+    
+    // 2. Fetch past bills
+    var salesSheet = ss.getSheetByName("Sales & Bills");
+    var bills = [];
+    if (salesSheet && salesSheet.getLastRow() > 1) {
+      var lastRowSales = salesSheet.getLastRow();
+      var data = salesSheet.getRange(2, 1, lastRowSales - 1, 16).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rawJson = data[i][15];
+        if (rawJson) {
+          try {
+            bills.push(JSON.parse(rawJson));
+          } catch(e) {
+            // Fallback if not valid JSON
+          }
+        }
+      }
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      customers: customers,
+      bills: bills
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
@@ -21,19 +73,40 @@ function doPost(e) {
     
     if (action === 'CHECKIN') {
       var sheet = getOrCreateSheet(ss, "Active CheckIns", 1);
-      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes"]);
+      setupHeaders(sheet, ["Customer ID", "Name", "Phone", "Seating Area", "Guests", "Check-In Time", "Notes", "Raw JSON"]);
       
       var checkInTime = formatTimeOnly(payload.entryTime);
       
-      sheet.appendRow([
+      var rowData = [
         payload.id,
         payload.name,
         payload.phone,
         payload.location,
         payload.numGuests,
         checkInTime,
-        payload.notes
-      ]);
+        payload.notes,
+        JSON.stringify(payload)
+      ];
+
+      var lastRow = sheet.getLastRow();
+      var foundIndex = -1;
+      if (lastRow > 1) {
+        var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var r = 0; r < ids.length; r++) {
+          if (ids[r][0] === payload.id) {
+            foundIndex = r + 2;
+            break;
+          }
+        }
+      }
+      
+      if (foundIndex !== -1) {
+        // Update existing customer row
+        sheet.getRange(foundIndex, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        // Append new customer row
+        sheet.appendRow(rowData);
+      }
       
       // Apply styles
       formatCheckinSheet(sheet);
@@ -77,7 +150,7 @@ function doPost(e) {
       setupHeaders(salesSheet, [
         "Bill Number", "Date", "Name", "Phone", "Seating Area", 
         "Check-In", "Check-Out", "Time Spent", "Food Total", 
-        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered"
+        "Seating Charge", "Grand Total", "Payment Method", "Status", "Cashier", "Items Ordered", "Raw JSON"
       ]);
       
       salesSheet.appendRow([
@@ -95,7 +168,8 @@ function doPost(e) {
         payload.paymentMethod,
         payload.status,
         payload.cashierName,
-        itemsSummary
+        itemsSummary,
+        JSON.stringify(payload)
       ]);
 
       // Apply clean formatting
@@ -119,6 +193,22 @@ function doPost(e) {
       // Update Dashboard Metric Cards & Rebuild Charts
       createOrUpdateDashboard(ss);
       
+    } else if (action === 'DELETE_BILL') {
+      var salesSheet = ss.getSheetByName("Sales & Bills");
+      if (salesSheet) {
+        var lastRowSales = salesSheet.getLastRow();
+        if (lastRowSales > 1) {
+          var values = salesSheet.getRange(2, 1, lastRowSales - 1, 1).getValues();
+          for (var r = 0; r < values.length; r++) {
+            if (values[r][0] === payload.billNumber) {
+              salesSheet.deleteRow(r + 2);
+              break;
+            }
+          }
+        }
+      }
+      createOrUpdateDashboard(ss);
+
     } else if (action === 'AUDIT') {
       var auditSheet = getOrCreateSheet(ss, "Audit Logs", 3);
       setupHeaders(auditSheet, ["Timestamp", "User ID", "Cashier", "Action", "Details"]);
