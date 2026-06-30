@@ -24,23 +24,24 @@ export const generateAIWhatsAppMessage = async (
   const chosenStyle = styles[Math.floor(Math.random() * styles.length)];
   const randomSeed = Math.random().toString(36).substring(7);
 
-  const systemPrompt = `You are a professional AI cashier assistant at Chapter One Cafe.
-Your task is to write a highly personalized, premium, warm, and professional checkout message to send to our guest on WhatsApp.
+  const ordinalSuffix = visitCount === 1 ? 'st' : visitCount === 2 ? 'nd' : visitCount === 3 ? 'rd' : 'th';
 
-Copywriting Guidelines:
-1. Write in a ${chosenStyle} tone. Do not write generic or basic text; use premium, elegant, and warm vocabulary.
-2. Address the customer by name: "${bill.customerName}". Make their name bold, e.g. "*${bill.customerName}*".
-3. Mention their visit count: ${visitCount} visit(s). If visitCount is 1, greet them as a new customer and welcome them warmly. If visitCount > 1, thank them for their loyalty as a repeating customer.
-4. Mention their ordered items: [${itemsText}]. Comment briefly on them with relevant vibrant food/beverage emojis (e.g. 🍕, 🍹, 🍔, 🍫, ☕, 🍟). Make the key items bold, e.g. "*${bill.orderedItems[0]?.name || 'order'}*".
-5. Seating location rules:
-   - If the seating location is exactly "Main Hall", DO NOT mention the words "Main Hall" or "hall" or "area", and DO NOT mention the duration, seating time, or time spent in your message at all. Simply focus on the dining experience.
-   - If they sat in the "Basement", make a cozy reference to their work/study session and their duration (${bill.timeSpentMinutes} mins).
-6. Ensure the message is concise (2-4 sentences max) so it fits beautifully in a WhatsApp chat bubble.
-7. Use bold text (using asterisks like *word*) on key highlights and names.
-8. DO NOT mention raw prices, subtotals, or tax rates. The billing details are appended separately.
-9. Output ONLY the greeting narrative. Do not include markdown headers or system notes.
+  const systemPrompt = `You are a warm, professional WhatsApp greeting writer for Chapter One Cafe.
+Write a personalized thank-you greeting to send to a customer after their visit. This greeting will appear ABOVE the digital invoice in the WhatsApp message.
 
-To keep it unique and different every time, use this randomization token: "${randomSeed}". Do not use standard templates.`;
+STRICT Formatting Rules:
+1. Write in a ${chosenStyle} tone.
+2. Start with: 🌿 Hello *${bill.customerName}*! followed by a warm thank you line.
+3. Mention their visit count: "🎉 This was your *${visitCount}${ordinalSuffix}* visit with us!" — If 1st visit, warmly welcome them as a new guest. If repeat, appreciate their loyalty.
+4. Mention what they enjoyed: [${itemsText}] — Use food/beverage emojis (☕🍕🍔🍹🍫🍟) and make item names bold with *asterisks*.
+5. End with a short eco-friendly line about sharing the bill digitally to save paper and trees 🌍.
+6. Write exactly 4-6 lines. Each line should be separated by a blank line (double newline). Keep it warm but not overly long.
+7. Use WhatsApp bold formatting (*word*) on the customer name, item names, and visit count.
+8. DO NOT include any invoice details, prices, totals, or bill numbers — those are appended separately.
+9. DO NOT use markdown headers, bullet points, or numbered lists.
+10. Output ONLY the greeting text, nothing else.
+
+Randomization seed: "${randomSeed}" — use this to vary your word choices so the message is unique every time.`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout

@@ -17,7 +17,8 @@ import type { Bill, CafeSettings, User as UserType } from '../types';
 import { getBills, deleteBill, saveAuditLog, syncToGoogleSheets } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
-import { formatWhatsAppMessage } from '../utils/whatsappFormatter';
+import { generateAIWhatsAppMessage } from '../utils/ai';
+import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
 
 
 interface CustomerHistoryProps {
@@ -168,6 +169,7 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
 
   const reShareWhatsApp = async (billObj: Bill) => {
     let visitCount = 1;
+    let aiIntro = '';
     try {
       const allBills = await getBills();
       const customerPhoneClean = billObj.customerPhone.trim();
@@ -176,7 +178,15 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
       console.warn('Failed to retrieve visit history:', err);
     }
 
-    const receiptMessage = formatWhatsAppMessage(billObj, visitCount);
+    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
+      try {
+        aiIntro = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
+      } catch (err) {
+        console.warn('Groq AI greeting failed:', err);
+      }
+    }
+
+    const receiptMessage = buildWhatsAppMessage(billObj, visitCount, aiIntro);
 
     navigator.clipboard.writeText(receiptMessage).then(() => {
       const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');

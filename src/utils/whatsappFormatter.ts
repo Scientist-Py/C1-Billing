@@ -15,9 +15,10 @@ const getOrdinalSuffix = (num: number): string => {
   return 'th';
 };
 
-export const formatWhatsAppMessage = (bill: Bill, visitCount: number): string => {
-  const ordinal = getOrdinalSuffix(visitCount);
-
+/**
+ * Generate the structured invoice section (always the same format).
+ */
+export const formatInvoiceSection = (bill: Bill): string => {
   const exitDate = new Date(bill.exitTime);
   const timeStr = exitDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   const day = String(exitDate.getDate()).padStart(2, '0');
@@ -37,13 +38,7 @@ export const formatWhatsAppMessage = (bill: Bill, visitCount: number): string =>
     basementLine = `\n  🔸 Basement Seating (${bill.timeSpentMinutes} min) — ₹${bill.basementCharges.toFixed(2)}`;
   }
 
-  const topItemNames = bill.orderedItems.map(i => `*${i.name}*`).join(', ');
-
-  const message =
-    `🌿 Hello *${bill.customerName}*! Thank you for visiting *Chapter One Cafe* ❤️\n\n` +
-    `🎉 This was your *${visitCount}${ordinal}* visit with us!\n\n` +
-    `🍽️ You enjoyed: ${topItemNames}\n\n` +
-    `💚 Your bill is shared digitally — saving paper, saving trees 🌍\n\n` +
+  return (
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📋 *CHAPTER ONE CAFE — DIGITAL INVOICE*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -69,7 +64,31 @@ export const formatWhatsAppMessage = (bill: Bill, visitCount: number): string =>
     `📸 Follow us: https://instagram.com/chapteronecafe_\n\n` +
     `✨ _Every visit writes a new chapter. See you soon!_\n\n` +
     `With warm regards,\n` +
-    `*Team Chapter One* ☕`;
+    `*Team Chapter One* ☕`
+  );
+};
 
-  return message;
+/**
+ * Generate a static fallback greeting (used when Groq API is unavailable).
+ */
+export const getStaticGreeting = (bill: Bill, visitCount: number): string => {
+  const ordinal = getOrdinalSuffix(visitCount);
+  const topItemNames = bill.orderedItems.map(i => `*${i.name}*`).join(', ');
+
+  return (
+    `🌿 Hello *${bill.customerName}*! Thank you for visiting *Chapter One Cafe* ❤️\n\n` +
+    `🎉 This was your *${visitCount}${ordinal}* visit with us!\n\n` +
+    `🍽️ You enjoyed: ${topItemNames}\n\n` +
+    `💚 Your bill is shared digitally — saving paper, saving trees 🌍`
+  );
+};
+
+/**
+ * Build the full WhatsApp message by combining AI intro + invoice.
+ * If aiIntro is empty, uses the static fallback greeting.
+ */
+export const buildWhatsAppMessage = (bill: Bill, visitCount: number, aiIntro: string): string => {
+  const greeting = aiIntro.trim() || getStaticGreeting(bill, visitCount);
+  const invoice = formatInvoiceSection(bill);
+  return `${greeting}\n\n${invoice}`;
 };

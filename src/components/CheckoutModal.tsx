@@ -12,7 +12,8 @@ import {
 import type { Customer, Bill, CafeSettings, PaymentMethod, PaymentDetails } from '../types';
 import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, getBills, calculateBasementCharge } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
-import { formatWhatsAppMessage } from '../utils/whatsappFormatter';
+import { generateAIWhatsAppMessage } from '../utils/ai';
+import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
 
 interface CheckoutModalProps {
   customer: Customer;
@@ -203,18 +204,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const shareWhatsAppBill = async (billObj: Bill) => {
     setIsAiLoading(true);
     let visitCount = 1;
+    let aiIntro = '';
     try {
       const allBills = await getBills();
       const customerPhoneClean = billObj.customerPhone.trim();
       visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
     } catch (err) {
-      console.warn("Failed to retrieve visit history:", err);
+      console.warn('Failed to retrieve visit history:', err);
+    }
+
+    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
+      try {
+        aiIntro = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
+      } catch (err) {
+        console.warn('Groq AI greeting failed:', err);
+      }
     }
     setIsAiLoading(false);
 
-    const receiptMessage = formatWhatsAppMessage(billObj, visitCount);
+    const receiptMessage = buildWhatsAppMessage(billObj, visitCount, aiIntro);
 
-    // Copy to clipboard
     navigator.clipboard.writeText(receiptMessage).then(() => {
       const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');
       const encodedMsg = encodeURIComponent(receiptMessage);
