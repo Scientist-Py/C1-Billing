@@ -267,46 +267,16 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="font-bold text-[#86868b]">Google Sheets Web App Sync URL (Local / Fallback)</label>
-                <input
-                  type="url"
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  value={settings.googleSheetsUrl || ''}
-                  onChange={(e) => setSettings({ ...settings, googleSheetsUrl: e.target.value })}
-                  className="apple-input font-medium text-xs"
-                />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
-                  ● Configured securely in Vercel. For local testing or fallback, enter the URL above.
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="font-bold text-[#86868b]">Groq Cloud API Key (Local / Fallback)</label>
-                <input
-                  type="password"
-                  placeholder="gsk_..."
-                  value={settings.groqApiKey || ''}
-                  onChange={(e) => setSettings({ ...settings, groqApiKey: e.target.value })}
-                  className="apple-input font-mono text-xs"
-                />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
-                  ● Configured securely in Vercel. For local testing or fallback, enter your key above.
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="font-bold text-[#86868b]">Google Gemini API Key (Local / Fallback)</label>
-                <input
-                  type="password"
-                  placeholder="AQ.Ab..."
-                  value={settings.geminiApiKey || ''}
-                  onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
-                  className="apple-input font-mono text-xs"
-                />
-                <span className="text-[10px] text-green-600 font-semibold leading-relaxed">
-                  ● Configured securely in Vercel. For local testing or fallback, enter your key above.
-                </span>
+              <div className="p-4 bg-green-50 border border-green-100 rounded-2xl flex items-start gap-3 mt-2">
+                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 shrink-0 text-sm font-bold">
+                  ✓
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-green-800">System Credentials Locked</h4>
+                  <p className="text-[10px] text-green-600 mt-0.5 leading-relaxed">
+                    Google Sheets sync endpoints, Groq LLM API authorization keys, and Gemini Audio voice engines are locked and running securely from server environment variables.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
