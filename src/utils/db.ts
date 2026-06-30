@@ -651,6 +651,9 @@ export const importBackupJSON = async (jsonString: string): Promise<void> => {
   }
 };
 
+// Memory cache to prevent race conditions during sync write latencies
+const syncExclusions = new Set<string>();
+
 // Google Sheets Sync Helper
 export const syncToGoogleSheets = async (action: string, payload: any): Promise<void> => {
   try {
@@ -694,22 +697,38 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
     const remoteCustomers = (result.customers || []) as Customer[];
     const remoteBills = (result.bills || []) as Bill[];
 
+    // Filter out remote customers that are in the syncExclusions set
+    const filteredRemoteCustomers = remoteCustomers.filter(c => {
+      if (syncExclusions.has(c.id)) {
+        return false;
+      }
+      return true;
+    });
+
+    // Clean up syncExclusions for IDs that are no longer returned by the server
+    const remoteCustomerIds = new Set(remoteCustomers.map(c => c.id));
+    for (const excludedId of Array.from(syncExclusions)) {
+      if (!remoteCustomerIds.has(excludedId)) {
+        syncExclusions.delete(excludedId);
+      }
+    }
+
     // 1. Clear and merge Active Customers
     await getStore('customers', 'readwrite').then(({ store }) => {
       return new Promise<void>((resolve, reject) => {
         const clearReq = store.clear();
         clearReq.onsuccess = () => {
-          if (remoteCustomers.length === 0) {
+          if (filteredRemoteCustomers.length === 0) {
             resolve();
             return;
           }
           let count = 0;
           let hasFailed = false;
-          for (const c of remoteCustomers) {
+          for (const c of filteredRemoteCustomers) {
             const req = store.put(c);
             req.onsuccess = () => {
               count++;
-              if (count === remoteCustomers.length && !hasFailed) resolve();
+              if (count === filteredRemoteCustomers.length && !hasFailed) resolve();
             };
             req.onerror = () => {
               hasFailed = true;
