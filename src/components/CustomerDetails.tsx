@@ -16,7 +16,7 @@ import type { Customer, MenuItem, CafeSettings, OrderedItem, Bill } from '../typ
 import { getMenu, saveCustomer, getBills, calculateBasementCharge } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
-import { generateAIWhatsAppMessage } from '../utils/ai';
+import { formatWhatsAppMessage } from '../utils/whatsappFormatter';
 
 
 interface CustomerDetailsProps {
@@ -73,58 +73,17 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
 
   const reShareWhatsApp = async (billObj: Bill) => {
     setIsAiSharing(true);
-    let introText = '';
-
-    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
-      try {
-        const allBills = await getBills();
-        const customerPhoneClean = billObj.customerPhone.trim();
-        // Count previous visits (how many bills in history match this phone)
-        const visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
-
-        introText = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
-      } catch (err) {
-        console.warn("Failed to generate AI message", err);
-      }
+    let visitCount = 1;
+    try {
+      const allBills = await getBills();
+      const customerPhoneClean = billObj.customerPhone.trim();
+      visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
+    } catch (err) {
+      console.warn("Failed to retrieve visit history:", err);
     }
-
     setIsAiSharing(false);
 
-    // Fallback template if Groq is empty/fails
-    if (!introText) {
-      introText = `Hello ${billObj.customerName}, thank you for dining with us! Hope you enjoyed your visit.`;
-    }
-
-    let itemsText = '';
-    billObj.orderedItems.forEach(item => {
-      itemsText += `• ${item.name} x ${item.quantity} = ₹${(item.price * item.quantity).toFixed(2)}\n`;
-    });
-
-    if (billObj.basementCharges > 0) {
-      itemsText += `• Basement Seating Fee (${billObj.timeSpentMinutes} min) = ${settings.currency}${billObj.basementCharges.toFixed(2)}\n`;
-    }
-
-    const receiptMessage = `${introText}\n\n` +
-      `*CHAPTER ONE CAFE INVOICE (COPY)*\n` +
-      `--------------------------------------\n` +
-      `*Bill Number:* ${billObj.billNumber}\n` +
-      `*Customer Name:* ${billObj.customerName}\n` +
-      `*Phone Number:* ${billObj.customerPhone}\n` +
-      (billObj.location !== 'Main Hall' ? `*Area:* ${billObj.location}\n` : '') +
-      `*Date:* ${(billObj.location === 'Main Hall' || billObj.location === 'Takeaway') ? new Date(billObj.exitTime).toLocaleDateString() : new Date(billObj.exitTime).toLocaleString()}\n` +
-      (billObj.location === 'Basement' ? `*Time Spent:* ${billObj.timeSpentMinutes} Minutes\n` : '') +
-      `--------------------------------------\n` +
-      `*ITEMS ORDERED:*\n${itemsText}` +
-      `--------------------------------------\n` +
-      `*Subtotal:* ₹${billObj.subtotal.toFixed(2)}\n` +
-      (billObj.discount > 0 ? `*Discount:* -₹${billObj.discount.toFixed(2)}\n` : '') +
-      (billObj.extraCharges > 0 ? `*Extra Charges:* +₹${billObj.extraCharges.toFixed(2)}\n` : '') +
-      `*GST (${settings.gstPercentage}%):* ₹${billObj.tax.toFixed(2)}\n` +
-      `*GRAND TOTAL:* ₹${billObj.grandTotal.toFixed(2)}\n` +
-      `--------------------------------------\n` +
-      `*Payment Method:* ${billObj.paymentMethod} (${billObj.status})\n` +
-      `--------------------------------------\n` +
-      `_${settings.receiptFooter}_`;
+    const receiptMessage = formatWhatsAppMessage(billObj, visitCount);
 
     navigator.clipboard.writeText(receiptMessage).then(() => {
       const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');
