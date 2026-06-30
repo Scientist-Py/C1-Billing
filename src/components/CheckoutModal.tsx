@@ -60,9 +60,31 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const elapsedMs = new Date(exitTime).getTime() - new Date(customer.entryTime).getTime();
   const timeSpentMins = Math.ceil(elapsedMs / (1000 * 60));
   
+  // Manual billable minutes override for basement (defaults to actual time)
+  const [billableMinutes, setBillableMinutes] = useState<number>(timeSpentMins);
+  
+  // Keep billableMinutes in sync with live timer (only if user hasn't manually reduced it)
+  useEffect(() => {
+    if (billableMinutes >= timeSpentMins - 1) {
+      setBillableMinutes(timeSpentMins);
+    }
+  }, [timeSpentMins]);
+
+  // Format minutes into human-readable hours + minutes
+  const formatDuration = (mins: number): string => {
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (m === 0) return `${h} hr`;
+    return `${h} hr ${m} min`;
+  };
+  
   const getSeatingCost = () => {
     if (customer.location !== 'Basement') return 0;
-    return calculateBasementCharge(customer.entryTime, exitTime, settings.basementHourlyRate);
+    // Use billableMinutes to calculate charge instead of actual elapsed time
+    const billableMs = billableMinutes * 60 * 1000;
+    const fakeExitTime = new Date(customer.entryTime).getTime() + billableMs;
+    return calculateBasementCharge(customer.entryTime, fakeExitTime, settings.basementHourlyRate);
   };
 
   const seatingCost = getSeatingCost();
@@ -119,9 +141,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const finalElapsedMs = new Date(finalExitTime).getTime() - new Date(customer.entryTime).getTime();
     const finalTimeSpentMins = Math.ceil(finalElapsedMs / (1000 * 60));
     
-    // Recalculate seating cost
+    // Recalculate seating cost using billable minutes
+    const finalBillableMs = billableMinutes * 60 * 1000;
+    const finalFakeExitTime = new Date(customer.entryTime).getTime() + finalBillableMs;
     const finalSeatingCost = customer.location === 'Basement'
-      ? calculateBasementCharge(customer.entryTime, finalExitTime, settings.basementHourlyRate)
+      ? calculateBasementCharge(customer.entryTime, finalFakeExitTime, settings.basementHourlyRate)
       : 0;
 
     const finalRawSubtotal = foodSubtotal + finalSeatingCost;
@@ -261,17 +285,49 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="space-y-6">
               {/* Seating recap banner */}
               {customer.location === 'Basement' && (
-                <div className="p-4 bg-apple-gray-50 border border-apple-gray-100 rounded-2xl flex justify-between items-center text-xs text-apple-gray-800">
-                  <div>
-                    <span className="text-[8px] text-[#86868b] uppercase tracking-wider block font-bold">Duration Seated</span>
-                    <span className="font-bold text-sm block">{timeSpentMins} Minutes</span>
-                    <span className="text-[10px] text-apple-gray-300 font-light mt-0.5">
-                      ({new Date(customer.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - Now)
-                    </span>
+                <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Actual Duration</span>
+                      <span className="font-bold text-sm block text-indigo-900">{formatDuration(timeSpentMins)}</span>
+                      <span className="text-[10px] text-indigo-300 font-light mt-0.5">
+                        ({new Date(customer.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} → Now)
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Seating Charge</span>
+                      <span className="font-bold text-sm block text-indigo-900">{settings.currency}{seatingCost.toFixed(2)}</span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[8px] text-[#86868b] uppercase tracking-wider block font-bold">Seating Fees ({customer.location})</span>
-                    <span className="font-bold text-sm block">{settings.currency}{seatingCost.toFixed(2)}</span>
+                  {/* Manual billable minutes adjustment */}
+                  <div className="flex items-center gap-3 pt-2 border-t border-indigo-100">
+                    <div className="flex-1">
+                      <label className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider block mb-1">Billable Minutes</label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setBillableMinutes(prev => Math.max(0, prev - 5))}
+                          className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
+                        >−</button>
+                        <input
+                          type="number"
+                          min="0"
+                          max={timeSpentMins}
+                          value={billableMinutes}
+                          onChange={(e) => setBillableMinutes(Math.max(0, Math.min(timeSpentMins, parseInt(e.target.value, 10) || 0)))}
+                          className="apple-input w-20 font-mono text-center text-sm"
+                        />
+                        <button
+                          onClick={() => setBillableMinutes(prev => Math.min(timeSpentMins, prev + 5))}
+                          className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
+                        >+</button>
+                      </div>
+                    </div>
+                    {billableMinutes < timeSpentMins && (
+                      <div className="text-right">
+                        <span className="text-[9px] text-green-500 font-semibold block">Reduced by</span>
+                        <span className="text-xs font-bold text-green-600">{formatDuration(timeSpentMins - billableMinutes)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
