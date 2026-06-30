@@ -63,9 +63,9 @@ export const formatWhatsAppMessage = (bill: Bill, visitCount: number): string =>
     `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
     `⭐ We'd love your feedback!\n` +
     `Leave us a Google Review:\n` +
-    `https://g.page/chapteronecafe/review\n\n` +
+    `https://tinyurl.com/Chapter-One-Review\n\n` +
     `📸 Follow us on Instagram:\n` +
-    `https://instagram.com/chapteronecafe\n\n` +
+    `https://instagram.com/chapteronecafe_\n\n` +
     `📍 Chapter One Cafe\n\n` +
     `✨ Every visit writes a new chapter. We can't wait to welcome you back!`;
 
