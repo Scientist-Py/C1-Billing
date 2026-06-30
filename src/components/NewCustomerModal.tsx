@@ -250,8 +250,8 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
                 onClick={() => setLocation('Main Hall')}
                 className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
                   location === 'Main Hall'
-                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
-                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                    ? 'border-amber-500 bg-amber-500 text-white font-semibold shadow-md shadow-amber-100'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-amber-200 hover:text-amber-500'
                 }`}
               >
                 <Sofa className="w-5 h-5" />
@@ -263,8 +263,8 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
                 onClick={() => setLocation('Basement')}
                 className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
                   location === 'Basement'
-                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
-                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                    ? 'border-indigo-600 bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-100'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-indigo-200 hover:text-indigo-600'
                 }`}
               >
                 <ArrowDown className="w-5 h-5" />
@@ -276,8 +276,8 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
                 onClick={() => setLocation('Takeaway')}
                 className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
                   location === 'Takeaway'
-                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
-                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                    ? 'border-emerald-500 bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-100'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-emerald-200 hover:text-emerald-500'
                 }`}
               >
                 <ShoppingBag className="w-5 h-5" />
