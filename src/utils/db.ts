@@ -165,7 +165,7 @@ export const seedDefaultData = async () => {
 
   // 3. Seed Menu
   const menu = await getMenu();
-  const needsSeeding = menu.length !== 76 || !menu.some(item => item.id.startsWith('item_'));
+  const needsSeeding = menu.length < 77 || !menu.some(item => item.id.startsWith('item_'));
   if (needsSeeding) {
     // Clear existing menu items first
     const { store } = await getStore('menu', 'readwrite');
@@ -251,7 +251,8 @@ export const seedDefaultData = async () => {
       { id: "item_73", name: "The Daily Crave Combo", category: "Curated Group Feasts", price: 189, availability: true, popularTag: false, keywords: ["feast", "bundle", "combo", "daily", "crave", "tdcc"] },
       { id: "item_74", name: "The Grand Family Box", category: "Curated Group Feasts", price: 449, availability: true, popularTag: false, keywords: ["feast", "bundle", "combo", "grand", "family", "tgfb"] },
       { id: "item_75", name: "Birthday Celebration Feast", category: "Curated Group Feasts", price: 1049, availability: true, popularTag: false, keywords: ["feast", "bundle", "combo", "birthday", "celebration", "bcf"] },
-      { id: "item_76", name: "Add Premium Cheese Slice to Any Order", category: "Premium Upgrade", price: 20, availability: true, popularTag: false, keywords: ["upgrade", "cheese", "slice", "premium", "apcs"] }
+      { id: "item_76", name: "Add Premium Cheese Slice to Any Order", category: "Premium Upgrade", price: 20, availability: true, popularTag: false, keywords: ["upgrade", "cheese", "slice", "premium", "apcs"] },
+      { id: "item_77", name: "Water Bottle", category: "Beverages", price: 20, availability: true, popularTag: false, keywords: ["water", "bottle", "beverages", "wb"] }
     ];
     for (const item of defaultMenu) {
       await saveMenuItem(item);

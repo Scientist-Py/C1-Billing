@@ -682,5 +682,14 @@
     "availability": true,
     "popularTag": false,
     "keywords": ["upgrade", "cheese", "slice", "premium", "apcs"]
+  },
+  {
+    "id": "item_77",
+    "name": "Water Bottle",
+    "category": "Beverages",
+    "price": 20,
+    "availability": true,
+    "popularTag": false,
+    "keywords": ["water", "bottle", "beverages", "wb"]
   }
 ]

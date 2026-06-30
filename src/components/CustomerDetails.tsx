@@ -45,6 +45,9 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
     baseName: string;
     options: MenuItem[];
   } | null>(null);
+  const [pizzaExtraCheese, setPizzaExtraCheese] = useState(false);
+  const [selectedCustomizeItem, setSelectedCustomizeItem] = useState<MenuItem | null>(null);
+  const [customizeExtraCheese, setCustomizeExtraCheese] = useState(false);
 
   // Repeating customer past records states
   const [pastBills, setPastBills] = useState<Bill[]>([]);
@@ -217,17 +220,34 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
   };
 
   // Add Item to Customer Order
-  const handleAddItem = async (menuItem: MenuItem) => {
-    if (menuItem.category === "Gourmet Crafted Pizzas") {
-      const baseName = menuItem.name.split(' - ')[0];
-      const options = menu.filter((item) => item.name.startsWith(baseName));
-      options.sort((a, b) => a.price - b.price);
-      setSelectedPizzaGroup({ baseName, options });
-      return;
+  const addDirectItemToCart = async (menuItem: MenuItem, extraCheese: boolean) => {
+    const isBurger = menuItem.name.toLowerCase().includes('burger');
+    const isPizza = menuItem.name.toLowerCase().includes('pizza');
+
+    let extraPrice = 0;
+    let suffix = '';
+
+    if (extraCheese) {
+      if (isBurger) {
+        extraPrice = 15;
+        suffix = ' (Extra Cheese Slice)';
+      } else if (isPizza) {
+        const sizeName = menuItem.name.split(' - ')[1] || '';
+        extraPrice = sizeName.toLowerCase().includes('medium')
+          ? 60
+          : sizeName.toLowerCase().includes('large') || menuItem.name.toLowerCase().includes('giant')
+          ? 80
+          : 40;
+        suffix = ' (Extra Cheese)';
+      }
     }
 
+    const finalName = menuItem.name + suffix;
+    const finalPrice = menuItem.price + extraPrice;
+    const cartItemKey = `${menuItem.id}${suffix ? '_' + suffix.replace(/[^a-zA-Z0-9]/g, '') : ''}`;
+
     const existingIndex = customer.orderedItems.findIndex(
-      (item) => item.menuItemId === menuItem.id
+      (item) => item.id === cartItemKey
     );
 
     let updatedOrders: OrderedItem[] = [...customer.orderedItems];
@@ -239,10 +259,10 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
       };
     } else {
       const newItem: OrderedItem = {
-        id: `ord_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        id: cartItemKey,
         menuItemId: menuItem.id,
-        name: menuItem.name,
-        price: menuItem.price,
+        name: finalName,
+        price: finalPrice,
         quantity: 1
       };
       updatedOrders.push(newItem);
@@ -257,6 +277,30 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
       await saveCustomer(updatedCustomer);
     }
     onUpdate(updatedCustomer);
+  };
+
+  const handleAddItem = async (menuItem: MenuItem) => {
+    // 1. Gourmet Pizzas size selector
+    if (menuItem.category === "Gourmet Crafted Pizzas") {
+      const baseName = menuItem.name.split(' - ')[0];
+      const options = menu.filter((item) => item.name.startsWith(baseName));
+      options.sort((a, b) => a.price - b.price);
+      setPizzaExtraCheese(false); // Reset toggle
+      setSelectedPizzaGroup({ baseName, options });
+      return;
+    }
+
+    // 2. Burgers or single-size Pizzas customization modal
+    const isBurger = menuItem.name.toLowerCase().includes('burger');
+    const isPizza = menuItem.name.toLowerCase().includes('pizza');
+    if (isBurger || isPizza) {
+      setCustomizeExtraCheese(false); // Reset toggle
+      setSelectedCustomizeItem(menuItem);
+      return;
+    }
+
+    // 3. Regular items (direct add)
+    await addDirectItemToCart(menuItem, false);
   };
 
   // Adjust quantity
@@ -719,57 +763,56 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
               </p>
             </div>
 
+            {/* Extra Cheese Toggle for Pizzas */}
+            <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🧀</span>
+                <div>
+                  <span className="text-xs font-bold text-amber-900 block">Add Extra Cheese</span>
+                  <span className="text-[9px] text-amber-500 font-medium block">
+                    Reg: +₹40 | Med: +₹60 | Lrg: +₹80
+                  </span>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={pizzaExtraCheese}
+                onChange={(e) => setPizzaExtraCheese(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+            </div>
+
             <div className="space-y-2">
               {selectedPizzaGroup.options.map((option) => {
                 const size = option.name.split(' - ')[1] || 'Regular';
+                const extraCheesePrice = size.toLowerCase().includes('medium') 
+                  ? 60 
+                  : size.toLowerCase().includes('large') 
+                  ? 80 
+                  : 40;
+                
+                const displayPrice = option.price + (pizzaExtraCheese ? extraCheesePrice : 0);
+
                 return (
                   <button
                     key={option.id}
-                    onClick={() => {
-                      const actualAddItem = async () => {
-                        const existingIndex = customer.orderedItems.findIndex(
-                          (item) => item.menuItemId === option.id
-                        );
-
-                        let updatedOrders: OrderedItem[] = [...customer.orderedItems];
-
-                        if (existingIndex > -1) {
-                          updatedOrders[existingIndex] = {
-                            ...updatedOrders[existingIndex],
-                            quantity: updatedOrders[existingIndex].quantity + 1
-                          };
-                        } else {
-                          const newItem: OrderedItem = {
-                            id: `ord_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                            menuItemId: option.id,
-                            name: option.name,
-                            price: option.price,
-                            quantity: 1
-                          };
-                          updatedOrders.push(newItem);
-                        }
-
-                        const updatedCustomer = {
-                          ...customer,
-                          orderedItems: updatedOrders
-                        };
-
-                        if (!customer.id.startsWith('temp_')) {
-                          await saveCustomer(updatedCustomer);
-                        }
-                        onUpdate(updatedCustomer);
-                        setSelectedPizzaGroup(null);
-                      };
-                      actualAddItem();
+                    onClick={async () => {
+                      await addDirectItemToCart(option, pizzaExtraCheese);
+                      setSelectedPizzaGroup(null);
                     }}
                     className="w-full p-3 bg-apple-gray-50/50 hover:bg-apple-gray-50 border border-apple-gray-100 rounded-xl flex items-center justify-between text-xs transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                   >
                     <div className="text-left">
                       <span className="font-bold text-apple-gray-800 text-sm block">{size}</span>
+                      {pizzaExtraCheese && (
+                        <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">
+                          + Extra Cheese (+₹{extraCheesePrice})
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-mono font-bold text-apple-gray-800 text-sm">
-                        {settings.currency}{option.price}
+                        {settings.currency}{displayPrice}
                       </span>
                       <div className="w-6 h-6 rounded-full bg-apple-gray-800 text-white flex items-center justify-center font-bold text-xs shadow-md">
                         +
@@ -786,6 +829,67 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
                 className="px-4 py-2 bg-apple-gray-50 hover:bg-apple-gray-100 text-apple-gray-800 rounded-xl text-xs font-semibold border border-apple-gray-100 transition-colors cursor-pointer"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedCustomizeItem && (
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-apple-gray-100 shadow-2xl space-y-5 animate-scale-up">
+            <div>
+              <span className="text-[9px] font-bold text-orange-500 uppercase tracking-widest bg-orange-50 border border-orange-100 px-2.5 py-0.5 rounded-full">
+                Customize Item
+              </span>
+              <h3 className="text-base font-bold text-apple-gray-800 mt-2">{selectedCustomizeItem.name}</h3>
+              <p className="text-xs text-apple-gray-300 font-light mt-1">
+                Select upgrades for your order:
+              </p>
+            </div>
+
+            {/* Customization Options */}
+            <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🧀</span>
+                <div>
+                  <span className="text-xs font-bold text-amber-900 block">
+                    {selectedCustomizeItem.name.toLowerCase().includes('burger') 
+                      ? 'Add Extra Cheese Slice' 
+                      : 'Add Extra Cheese'}
+                  </span>
+                  <span className="text-[9px] text-amber-500 font-medium block">
+                    {selectedCustomizeItem.name.toLowerCase().includes('burger') 
+                      ? '+₹15' 
+                      : selectedCustomizeItem.name.toLowerCase().includes('giant') || selectedCustomizeItem.name.toLowerCase().includes('large')
+                      ? '+₹80'
+                      : '+₹40'}
+                  </span>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={customizeExtraCheese}
+                onChange={(e) => setCustomizeExtraCheese(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-1">
+              <button
+                onClick={() => setSelectedCustomizeItem(null)}
+                className="px-4 py-2 bg-apple-gray-50 hover:bg-apple-gray-100 text-apple-gray-800 rounded-xl text-xs font-semibold border border-apple-gray-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await addDirectItemToCart(selectedCustomizeItem, customizeExtraCheese);
+                  setSelectedCustomizeItem(null);
+                }}
+                className="px-4 py-2 bg-apple-gray-800 hover:bg-black text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+              >
+                Add to Cart
               </button>
             </div>
           </div>
