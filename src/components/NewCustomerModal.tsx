@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, UserPlus, MapPin, Users, FileText } from 'lucide-react';
+import { X, UserPlus, MapPin, Sofa, ArrowDown, ShoppingBag } from 'lucide-react';
 import type { Customer, SeatingLocation, Bill, OrderedItem } from '../types';
 import { saveCustomer, saveAuditLog, syncToGoogleSheets, getBills, getActiveCustomers } from '../utils/db';
 
@@ -19,8 +19,8 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [location, setLocation] = useState<SeatingLocation>('Main Hall');
-  const [guests, setGuests] = useState<number>(1);
-  const [notes, setNotes] = useState('');
+  const guests = 1;
+  const notes = '';
 
   const [pastBills, setPastBills] = useState<Bill[]>([]);
   const [suggestions, setSuggestions] = useState<{ name: string; phone: string; visits: number }[]>([]);
@@ -238,53 +238,52 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
             </div>
           )}
 
-          {/* Seating Location & Guests */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="font-bold text-[#86868b] flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5" />
-                <span>Seating Area</span>
-              </label>
-              <select
-                value={location}
-                onChange={(e) => setLocation(e.target.value as SeatingLocation)}
-                className="apple-input bg-apple-gray-50 text-apple-gray-800 font-semibold cursor-pointer"
-              >
-                <option value="Main Hall">Main Hall (No fee)</option>
-                <option value="Basement">Basement (Timer)</option>
-                <option value="Takeaway">Takeaway (No fee)</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="font-bold text-[#86868b] flex items-center gap-1">
-                <Users className="w-3.5 h-3.5" />
-                <span>Guest Count</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={guests}
-                onChange={(e) => setGuests(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="apple-input font-mono text-center"
-              />
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="flex flex-col gap-1.5">
-            <label className="font-bold text-[#86868b] flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5" />
-              <span>Notes (Optional)</span>
+          {/* Cool Seating Location Selector */}
+          <div className="flex flex-col gap-2.5">
+            <label className="font-bold text-[#86868b] flex items-center gap-1 text-[11px] uppercase tracking-wider">
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Select Seating Area</span>
             </label>
-            <input
-              type="text"
-              placeholder="e.g. Needs window seat"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="apple-input"
-            />
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => setLocation('Main Hall')}
+                className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
+                  location === 'Main Hall'
+                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                }`}
+              >
+                <Sofa className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Main Hall</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setLocation('Basement')}
+                className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
+                  location === 'Basement'
+                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                }`}
+              >
+                <ArrowDown className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Basement</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLocation('Takeaway')}
+                className={`p-3.5 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer select-none ${
+                  location === 'Takeaway'
+                    ? 'border-apple-gray-800 bg-apple-gray-900 text-white font-semibold'
+                    : 'border-apple-gray-100 bg-white text-apple-gray-400 hover:border-apple-gray-200'
+                }`}
+              >
+                <ShoppingBag className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Takeaway</span>
+              </button>
+            </div>
           </div>
 
           {/* Submit */}

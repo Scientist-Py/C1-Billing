@@ -396,12 +396,7 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
         {customer.id.startsWith('temp_') ? (
           <button
             onClick={onCheckout}
-            disabled={customer.orderedItems.length === 0}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer ${
-              customer.orderedItems.length === 0 
-                ? 'bg-apple-gray-100 text-apple-gray-300 border border-apple-gray-100 cursor-not-allowed'
-                : 'bg-apple-gray-800 text-white hover:bg-black'
-            }`}
+            className="flex items-center gap-2 px-5 py-2.5 bg-apple-gray-800 hover:bg-black text-white rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Assign Table & Check-in</span>
