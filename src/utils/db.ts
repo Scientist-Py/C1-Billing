@@ -389,7 +389,13 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   });
 };
 
+// Memory cache to prevent race conditions during sync write latencies
+const syncExclusions = new Set<string>();
+
 export const deleteCustomer = async (id: string): Promise<void> => {
+  // Immediately block this ID from being re-synced from remote
+  syncExclusions.add(id);
+
   try {
     const customer = await getCustomer(id);
     if (customer) {
@@ -651,8 +657,6 @@ export const importBackupJSON = async (jsonString: string): Promise<void> => {
   }
 };
 
-// Memory cache to prevent race conditions during sync write latencies
-const syncExclusions = new Set<string>();
 
 // Google Sheets Sync Helper
 export const syncToGoogleSheets = async (action: string, payload: any): Promise<void> => {
