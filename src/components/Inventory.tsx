@@ -313,7 +313,7 @@ export const Inventory: React.FC<InventoryProps> = ({ currentUser, settings }) =
             {aiReport}
           </div>
           <div className="text-[10px] text-apple-gray-300 italic text-right">
-            Generated using llama-3.3-70b-versatile via Groq API.
+            Generated using openai/gpt-oss-120b via Groq API.
           </div>
         </div>
       )}

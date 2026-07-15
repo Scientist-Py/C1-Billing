@@ -38,33 +38,23 @@ export const formatInvoiceSection = (bill: Bill): string => {
     basementLine = `\n  🔸 Basement Seating (${bill.timeSpentMinutes} min) — ₹${bill.basementCharges.toFixed(2)}`;
   }
 
+  let calculationsLine = `💰 Subtotal: ₹${bill.subtotal.toFixed(2)}`;
+  if (bill.discount > 0) calculationsLine += ` | 🏷️ Disc: -₹${bill.discount.toFixed(2)}`;
+  if (bill.extraCharges > 0) calculationsLine += ` | ⚡ Extra: +₹${bill.extraCharges.toFixed(2)}`;
+  calculationsLine += ` | 🧾 GST: ₹${bill.tax.toFixed(2)}`;
+
   return (
+    `📋 *INVOICE DETAILS*\n` +
+    `🧾 Bill: *${bill.billNumber}* | 📅 Date: *${dateStr}* | 🕒 Time: *${timeStr}*\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `📋 *CHAPTER ONE CAFE — DIGITAL INVOICE*\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `🧾 Bill No: *${bill.billNumber}*\n\n` +
-    `📅 Date: *${dateStr}*\n\n` +
-    `🕒 Time: *${timeStr}*\n\n` +
-    `👤 Customer: *${bill.customerName}*\n\n` +
-    `📞 Phone: *${bill.customerPhone}*\n\n` +
+    `${itemsList}${basementLine}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🍽 *YOUR ORDER*\n` +
+    `${calculationsLine}\n` +
+    `💳 *Total Paid: ₹${bill.grandTotal.toFixed(2)}* (${bill.paymentMethod})\n` +
     `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `${itemsList}${basementLine}\n\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `💰 Subtotal: ₹${bill.subtotal.toFixed(2)}\n\n` +
-    (bill.discount > 0 ? `🏷️ Discount: -₹${bill.discount.toFixed(2)}\n\n` : '') +
-    (bill.extraCharges > 0 ? `⚡ Extra Charges: +₹${bill.extraCharges.toFixed(2)}\n\n` : '') +
-    `🧾 GST: ₹${bill.tax.toFixed(2)}\n\n` +
-    `💳 Total Paid: *₹${bill.grandTotal.toFixed(2)}*\n\n` +
-    `💵 Payment: ${bill.paymentMethod} (${bill.status})\n` +
-    `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-    `⭐ We'd love your feedback!\n` +
-    `https://tinyurl.com/Chapter-One-Review\n\n` +
-    `📸 Follow us: https://instagram.com/chapteronecafe_\n\n` +
-    `✨ _Every visit writes a new chapter. See you soon!_\n\n` +
-    `With warm regards,\n` +
-    `*Team Chapter One* ☕`
+    `⭐ *Please Review Us:* https://tinyurl.com/Chapter-One-Review\n` +
+    `📸 *Instagram:* https://instagram.com/chapteronecafe_\n\n` +
+    `✨ _Every visit writes a new chapter. See you soon!_ ☕`
   );
 };
 
@@ -76,10 +66,9 @@ export const getStaticGreeting = (bill: Bill, visitCount: number): string => {
   const topItemNames = bill.orderedItems.map(i => `*${i.name}*`).join(', ');
 
   return (
-    `🌿 Hello *${bill.customerName}*! Thank you for visiting *Chapter One Cafe* ❤️\n\n` +
-    `🎉 This was your *${visitCount}${ordinal}* visit with us!\n\n` +
-    `🍽️ You enjoyed: ${topItemNames}\n\n` +
-    `💚 Your bill is shared digitally — saving paper, saving trees 🌍`
+    `🌿 Hello *${bill.customerName}*! Thank you for visiting *Chapter One Cafe* 😊\n` +
+    `🎉 Thank you for your *${visitCount}${ordinal}* visit! You enjoyed: ${topItemNames} ☕\n` +
+    `💚 Shared digitally to save paper and trees 🌍`
   );
 };
 

@@ -1,5 +1,22 @@
 import type { Bill } from '../types';
 
+/**
+ * Returns the correct Groq API endpoint.
+ * In Electron (file:// protocol), the Vite proxy does not exist, so we call the Groq API directly.
+ * In a web browser, we route through the Vite proxy to avoid CORS restrictions.
+ */
+const getGroqUrl = (): string => {
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.protocol === 'file:' || window.location.hostname === '')
+  ) {
+    return 'https://api.groq.com/openai/v1/chat/completions';
+  }
+  return '/api-groq/openai/v1/chat/completions';
+};
+
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+
 const styles = [
   "Enthusiastic and friendly (using words like 'awesome', 'thrilled to have you', 'great energy')",
   "Cozy, welcoming, and warm (using words like 'pleasure hosting you', 'cozy vibes', 'hope you relaxed')",
@@ -46,9 +63,8 @@ Randomization seed: "${randomSeed}" — use this to vary your word choices so th
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout
 
-  // Use proxy path to bypass CORS restrictions in the browser.
-  // The proxy is handled by Vite proxy in development and vercel.json rewrites in production.
-  const url = '/api-groq/openai/v1/chat/completions';
+  // Use smart URL that works in both Electron and browser.
+  const url = getGroqUrl();
 
   try {
     const response = await fetch(url, {
@@ -58,7 +74,7 @@ Randomization seed: "${randomSeed}" — use this to vary your word choices so th
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Write a customized WhatsApp thank you message for customer ${bill.customerName}.` }
@@ -204,7 +220,7 @@ Writing Guidelines:
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
 
   // Use proxy path to bypass CORS restrictions in the browser.
-  const url = '/api-groq/openai/v1/chat/completions';
+  const url = getGroqUrl();
 
   try {
     const response = await fetch(url, {
@@ -214,7 +230,7 @@ Writing Guidelines:
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Analyze this cafe sales payload: ${JSON.stringify(dataPayload)}` }
@@ -263,14 +279,14 @@ export const generateWelcomeGreeting = async (
   const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 seconds timeout
 
   try {
-    const response = await fetch('/api-groq/openai/v1/chat/completions', {
+    const response = await fetch(getGroqUrl(), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Greet the user "${username}" (role: "${role}")` }
@@ -500,7 +516,7 @@ Keep your response professional, warm, concise (approx 200-300 words), and highl
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 7000); // 7 second timeout
 
-  const url = '/api-groq/openai/v1/chat/completions';
+  const url = getGroqUrl();
 
   try {
     const response = await fetch(url, {
@@ -510,7 +526,7 @@ Keep your response professional, warm, concise (approx 200-300 words), and highl
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Here is the current inventory status:\n${itemsText}\n\nRecent logs:\n${recentLogsText}` }
@@ -533,5 +549,44 @@ Keep your response professional, warm, concise (approx 200-300 words), and highl
     console.warn("Groq AI inventory insights failed or timed out:", err);
     return '⚠️ *AI Insights Unavailable*\n\nThe request to Groq API timed out or failed. Please check your API key and internet connection, then try again.';
   }
+};
+
+/**
+ * Groq AI Completions Helper.
+ * Utilizes the official Groq API endpoint to generate review responses and customer insights summaries.
+ */
+export const queryGroqAI = async (prompt: string, systemPrompt?: string): Promise<string> => {
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('Groq AI API Key is missing in .env configuration.');
+  }
+
+  const messages: { role: 'system' | 'user'; content: string }[] = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await fetch(getGroqUrl(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 250
+    })
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({}));
+    throw new Error(errorJson?.error?.message || `Groq API returned HTTP ${response.status}`);
+  }
+
+  const result = await response.json();
+  return result?.choices?.[0]?.message?.content || '';
 };
 

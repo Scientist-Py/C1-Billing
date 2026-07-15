@@ -3,7 +3,6 @@ import { ShieldAlert, Shield, Users, ChevronRight, ArrowLeft, User as UserIcon }
 import { getUsers } from '../utils/db';
 import type { User } from '../types';
 import logo from '../assets/logo.jpg';
-import nancyPhoto from './nancy.png';
 import raviPhoto from './ravi.png';
 import adminPhoto from './admin.png';
 
@@ -163,7 +162,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   </div>
                   <div>
                     <div className="text-sm font-bold text-apple-gray-800">Cafe Staff</div>
-                    <div className="text-[10px] text-[#86868b] font-light">Nancy & Ravi checkout portals</div>
+                    <div className="text-[10px] text-[#86868b] font-light">Ravi checkout portal</div>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-apple-gray-300" />
@@ -184,7 +183,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <div className="w-full px-4">
               <div className="grid grid-cols-2 gap-4">
                 {users.filter(u => u.role === 'staff').map(u => {
-                  const photo = u.username === 'Nancy' ? nancyPhoto : u.username === 'Ravi' ? raviPhoto : null;
+                  const photo = u.username === 'Ravi' ? raviPhoto : null;
                   return (
                     <button
                       key={u.id}
@@ -224,9 +223,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <div className="flex flex-col items-center">
               {/* User Portrait Avatar */}
               <div className="w-48 bg-[#f5f5f7] border-2 border-white shadow-apple-medium rounded-3xl flex items-center justify-center overflow-hidden mb-3">
-                {selectedUser?.username === 'Nancy' ? (
-                  <img src={nancyPhoto} alt="Nancy" className="w-full h-auto object-contain" />
-                ) : selectedUser?.username === 'Ravi' ? (
+                {selectedUser?.username === 'Ravi' ? (
                   <img src={raviPhoto} alt="Ravi" className="w-full h-auto object-contain" />
                 ) : selectedUser?.role === 'admin' ? (
                   <img src={adminPhoto} alt="Admin" className="w-full h-auto object-contain" />

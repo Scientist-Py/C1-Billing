@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ShieldAlert, ArrowLeft, Lock, User as UserIcon } from 'lucide-react';
 import type { User } from '../types';
 import adminPhoto from './admin.png';
-import nancyPhoto from './nancy.png';
 import raviPhoto from './ravi.png';
 
 interface AutoLockScreenProps {
@@ -19,12 +18,10 @@ export const AutoLockScreen: React.FC<AutoLockScreenProps> = ({
   const [pin, setPin] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  const photo = currentUser.username === 'Nancy' 
-    ? nancyPhoto 
-    : currentUser.username === 'Ravi' 
-    ? raviPhoto 
-    : currentUser.role === 'admin' 
-    ? adminPhoto 
+  const photo = currentUser.username === 'Ravi'
+    ? raviPhoto
+    : currentUser.role === 'admin'
+    ? adminPhoto
     : null;
 
   const handleKeyPress = (digit: string) => {

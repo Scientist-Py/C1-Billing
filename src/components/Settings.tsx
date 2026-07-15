@@ -7,7 +7,13 @@ import {
   Trash2, 
   Check, 
   Sliders,
-  DollarSign
+  DollarSign,
+  MessageCircle,
+  Wifi,
+  WifiOff,
+  Send,
+  ShieldCheck,
+  Clipboard
 } from 'lucide-react';
 import type { CafeSettings, AuditLog, User } from '../types';
 import { 
@@ -33,6 +39,9 @@ export const Settings: React.FC<SettingsProps> = ({
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [waTestPhone, setWaTestPhone] = useState('');
+  const [waConnStatus, setWaConnStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [waConnMsg, setWaConnMsg] = useState('');
 
   const loadSettingsAndLogs = async () => {
     try {
@@ -149,6 +158,99 @@ export const Settings: React.FC<SettingsProps> = ({
   const showNotification = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const handleTestCRMConnection = async () => {
+    if (!settings) return;
+    const url = settings.crmScriptUrl?.trim();
+    if (!url) {
+      setWaConnStatus('error');
+      setWaConnMsg('CRM Script URL is empty. Please paste your Google Apps Script Web App URL.');
+      return;
+    }
+    setWaConnStatus('loading');
+    setWaConnMsg('Connecting to CRM Spreadsheet...');
+    try {
+      const res = await fetch(`${url}?action=GET_PROFILES`);
+      if (res.ok) {
+        setWaConnStatus('ok');
+        setWaConnMsg('CRM Spreadsheet connected successfully!');
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      setWaConnStatus('error');
+      setWaConnMsg(`Connection failed: ${err.message}`);
+    }
+  };
+
+  const handleSendTestInvoice = async () => {
+    if (!settings) return;
+    const phone = waTestPhone.trim();
+    if (!phone) {
+      alert('Please enter a phone number to send the test invoice to.');
+      return;
+    }
+    const token = settings.waAccessToken?.trim();
+    const phoneId = settings.waPhoneNumberId?.trim();
+    const template = settings.waTemplateName?.trim() || 'invoice_receipt';
+    const lang = settings.waLanguage?.trim() || 'en';
+    if (!token || !phoneId) {
+      alert('Please fill in the Access Token and Phone Number ID before sending a test.');
+      return;
+    }
+    try {
+      const { generateReceiptPDFBlob } = await import('../utils/pdfGenerator');
+      const { uploadPDFToMeta, sendWhatsAppTemplate } = await import('../utils/whatsappCloud');
+
+      // Create a mockup bill to generate a valid PDF
+      const dummyBill = {
+        id: 'test_invoice_id',
+        billNumber: 'TEST-001',
+        date: new Date().toISOString(),
+        entryTime: new Date().toISOString(),
+        exitTime: new Date().toISOString(),
+        customerName: 'Test Customer',
+        customerPhone: phone,
+        location: 'Test Section',
+        orderedItems: [
+          { name: 'Delicious Coffee', price: 100, quantity: 2, category: 'Beverages' }
+        ],
+        subtotal: 200,
+        discount: 0,
+        extraCharges: 0,
+        tax: 10,
+        grandTotal: 210,
+        paymentMethod: 'Cash',
+        status: 'Paid',
+        cashierName: 'Admin',
+        cashierId: 'admin_id'
+      };
+
+      // 1. Generate test PDF Blob
+      const pdfBlob = await generateReceiptPDFBlob(dummyBill as any, settings);
+
+      // 2. Upload PDF to Meta to get the media ID
+      const mediaId = await uploadPDFToMeta(pdfBlob, token, phoneId);
+
+      // 3. Send WhatsApp Template with the media ID included
+      const res = await sendWhatsAppTemplate({
+        phoneNumberId: phoneId,
+        accessToken: token,
+        to: phone,
+        templateName: template,
+        languageCode: lang,
+        mediaId,
+        bodyParams: [
+          { type: 'text', text: 'Test Customer' },
+          { type: 'text', text: 'TEST-001' },
+          { type: 'text', text: '₹210.00' },
+        ],
+      });
+      alert(`✅ Test invoice sent successfully with PDF! Message ID: ${res.messageId}`);
+    } catch (err: any) {
+      alert(`❌ Failed to send test invoice: ${err.message}`);
+    }
   };
 
   if (!settings) return null;
@@ -281,14 +383,251 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
           </div>
 
-          <button
-            type="submit"
-            className="apple-btn-primary py-3 w-full flex items-center justify-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            <span>Commit System Configurations</span>
-          </button>
-        </form>
+        {/* WhatsApp Cloud API & CRM Section */}
+        <div className="apple-card space-y-5">
+          <h4 className="text-xs font-bold text-apple-gray-300 uppercase tracking-wider flex items-center gap-2">
+            <MessageCircle className="w-4 h-4 text-green-500" />
+            <span>WhatsApp Cloud API &amp; CRM</span>
+          </h4>
+
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="flex flex-col gap-1.5 col-span-2">
+              <label className="font-bold text-[#86868b]">CRM Spreadsheet Web App URL</label>
+              <input
+                type="url"
+                placeholder="https://script.google.com/macros/s/YOUR_CRM_SCRIPT_ID/exec"
+                value={settings.crmScriptUrl || ''}
+                onChange={(e) => setSettings({ ...settings, crmScriptUrl: e.target.value })}
+                className="apple-input font-mono text-[10px]"
+              />
+              <div className="flex items-center gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={handleTestCRMConnection}
+                  disabled={waConnStatus === 'loading'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-apple-gray-50 hover:bg-apple-gray-100 border border-apple-gray-200 rounded-lg text-[10px] font-bold text-apple-gray-800 transition-apple cursor-pointer disabled:opacity-50"
+                >
+                  {waConnStatus === 'loading' ? (
+                    <span className="animate-spin">⟳</span>
+                  ) : waConnStatus === 'ok' ? (
+                    <Wifi className="w-3 h-3 text-green-500" />
+                  ) : waConnStatus === 'error' ? (
+                    <WifiOff className="w-3 h-3 text-red-500" />
+                  ) : (
+                    <Wifi className="w-3 h-3" />
+                  )}
+                  Test CRM Connection
+                </button>
+                {waConnMsg && (
+                  <span className={`text-[9px] font-medium ${waConnStatus === 'ok' ? 'text-green-600' : 'text-red-500'}`}>
+                    {waConnMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5 col-span-2">
+              <label className="font-bold text-[#86868b]">WhatsApp Access Token</label>
+              <input
+                type="password"
+                placeholder="Your Meta permanent/temporary access token"
+                value={settings.waAccessToken || ''}
+                onChange={(e) => setSettings({ ...settings, waAccessToken: e.target.value })}
+                className="apple-input font-mono text-[10px]"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-[#86868b]">Phone Number ID</label>
+              <input
+                type="text"
+                placeholder="e.g. 123456789012345"
+                value={settings.waPhoneNumberId || ''}
+                onChange={(e) => setSettings({ ...settings, waPhoneNumberId: e.target.value })}
+                className="apple-input font-mono"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-[#86868b]">WABA ID</label>
+              <input
+                type="text"
+                placeholder="e.g. 987654321098765"
+                value={settings.waWabaId || ''}
+                onChange={(e) => setSettings({ ...settings, waWabaId: e.target.value })}
+                className="apple-input font-mono"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-[#86868b]">Template Name</label>
+              <input
+                type="text"
+                placeholder="invoice_receipt"
+                value={settings.waTemplateName || ''}
+                onChange={(e) => setSettings({ ...settings, waTemplateName: e.target.value })}
+                className="apple-input font-mono"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-[#86868b]">Language Code</label>
+              <input
+                type="text"
+                placeholder="en"
+                value={settings.waLanguage || ''}
+                onChange={(e) => setSettings({ ...settings, waLanguage: e.target.value })}
+                className="apple-input font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Review Automation Section */}
+          <div className="border-t border-apple-gray-100/60 pt-4 mt-1 space-y-4">
+            <h5 className="text-[10px] font-bold text-apple-gray-300 uppercase tracking-wider">
+              Review Automation
+            </h5>
+            
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="flex justify-between items-center bg-[#f5f5f7] p-2.5 rounded-2xl border border-apple-gray-100 col-span-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-bold text-apple-gray-800 text-xs">Enable Automatic Review</span>
+                  <span className="text-[9px] text-[#86868b]">Send review template automatically after checkout</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings({ ...settings, reviewEnableAuto: !settings.reviewEnableAuto })}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.reviewEnableAuto ? 'bg-green-500' : 'bg-apple-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.reviewEnableAuto ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Delay Before Sending (Minutes)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settings.reviewDelayMinutes ?? 10}
+                  onChange={(e) => setSettings({ ...settings, reviewDelayMinutes: parseInt(e.target.value, 10) || 10 })}
+                  className="apple-input font-mono"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="font-bold text-[#86868b]">Review Template Name</label>
+                <input
+                  type="text"
+                  placeholder="google_review_request"
+                  value={settings.reviewTemplateName || 'google_review_request'}
+                  onChange={(e) => setSettings({ ...settings, reviewTemplateName: e.target.value })}
+                  className="apple-input font-mono"
+                />
+              </div>
+
+              <div className="flex justify-between items-center bg-[#f5f5f7] p-2.5 rounded-2xl border border-apple-gray-100">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-bold text-apple-gray-800 text-[10px]">Review Scheduler Enabled</span>
+                  <span className="text-[9px] text-[#86868b]">Run scheduler background job</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings({ ...settings, reviewSchedulerEnabled: settings.reviewSchedulerEnabled === false ? true : false })}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.reviewSchedulerEnabled !== false ? 'bg-green-500' : 'bg-apple-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.reviewSchedulerEnabled !== false ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex justify-between items-center bg-[#f5f5f7] p-2.5 rounded-2xl border border-apple-gray-100">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-bold text-apple-gray-800 text-[10px]">Review Retry Enabled</span>
+                  <span className="text-[9px] text-[#86868b]">Auto retry failed reviews</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings({ ...settings, reviewRetryEnabled: settings.reviewRetryEnabled === false ? true : false })}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.reviewRetryEnabled !== false ? 'bg-green-500' : 'bg-apple-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.reviewRetryEnabled !== false ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Webhook verify token */}
+          <div className="p-3 bg-[#f5f5f7] rounded-2xl border border-apple-gray-100 space-y-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-apple-blue-500" />
+              <span className="text-[10px] font-bold text-apple-gray-800">Meta Webhook Verify Token</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-[9px] font-mono bg-white border border-apple-gray-200 rounded-lg px-2 py-1.5 text-apple-gray-800 select-all">
+                chapterone_crm_webhook_token
+              </code>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText('chapterone_crm_webhook_token').then(() => showNotification('Token copied!'))}
+                className="p-1.5 hover:bg-apple-gray-200 rounded-lg transition-apple cursor-pointer"
+                title="Copy token"
+              >
+                <Clipboard className="w-3.5 h-3.5 text-[#86868b]" />
+              </button>
+            </div>
+            <p className="text-[9px] text-[#86868b] leading-relaxed">
+              Configure this exact token in your Meta Developer Console webhook settings. Point the callback URL to your CRM Script URL.
+            </p>
+          </div>
+
+          {/* Send test invoice */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider">Send Test Invoice</label>
+            <div className="flex gap-2">
+              <input
+                type="tel"
+                placeholder="Enter phone number (e.g. 9876543210)"
+                value={waTestPhone}
+                onChange={(e) => setWaTestPhone(e.target.value)}
+                className="apple-input flex-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleSendTestInvoice}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl text-[10px] font-bold shadow-sm hover:shadow-md transition-all cursor-pointer"
+              >
+                <Send className="w-3 h-3" />
+                Send Test
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="apple-btn-primary py-3 w-full flex items-center justify-center gap-2"
+        >
+          <Save className="w-4 h-4" />
+          <span>Commit System Configurations</span>
+        </button>
+      </form>
 
         {/* Database backup logs & audits panel (Right Col) */}
         <div className="space-y-6">

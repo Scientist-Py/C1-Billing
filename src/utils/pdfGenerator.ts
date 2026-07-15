@@ -9,231 +9,317 @@ const loadImage = (url: string): Promise<HTMLImageElement> => {
     img.crossOrigin = 'anonymous';
     img.src = url;
     img.onload = () => resolve(img);
-    img.onerror = () => resolve(null as any); // Resolve null on error to proceed without logo
+    img.onerror = () => resolve(null as any);
   });
 };
 
 /**
- * Generates and downloads a highly styled, modern, and attractive PDF receipt in A5 format.
- * Prevents text overlapping and alignment bugs by using a standard A5 layout.
+ * Helper to crop a rectangular source image into a perfect circle using an off-screen HTML5 Canvas.
+ * Prevents invalid method errors on jsPDF instance.
  */
+const getCroppedCircularLogo = (imgElement: HTMLImageElement): string => {
+  const canvas = document.createElement('canvas');
+  const size = Math.min(imgElement.width, imgElement.height);
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return imgElement.src;
+
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(imgElement, 0, 0, size, size);
+  return canvas.toDataURL('image/png');
+};
+
+/**
+ * Generates a clean A4 tax invoice matching the provided design structure.
+ * Replaces all unicode Rupee symbols (₹) with "Rs." to prevent pdf font encoding errors.
+ * Clips the logo image inside a clean circle.
+ */
+export const buildReceiptPDFDoc = async (
+  billObj: Bill,
+  settings: CafeSettings,
+  isCopy: boolean = false
+): Promise<jsPDF> => {
+  // A4 format: 210mm x 297mm
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = 210;
+  const leftMargin = 20;
+  const rightMargin = 190;
+
+  let currentY = 15;
+
+  // 1. CIRCULAR LOGO & CAFE HEADER
+  try {
+    const logoImg = await loadImage(logo);
+    if (logoImg) {
+      const logoSize = 25;
+      const logoX = (pageWidth - logoSize) / 2;
+      const logoY = currentY;
+
+      // Crop the logo element to a circular base64 image path
+      const circularLogoUrl = getCroppedCircularLogo(logoImg);
+      doc.addImage(circularLogoUrl, 'PNG', logoX, logoY, logoSize, logoSize);
+
+      currentY += logoSize + 4;
+    }
+  } catch (err) {
+    console.warn('Failed to load branding logo for circular clipping:', err);
+    currentY += 10; // Fallback spacing
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(17, 24, 39); // Slate 900
+  doc.text(settings.name || 'CHAPTER ONE CAFE', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128); // Slate 500
+  doc.text('Near Bajaj Showroom, Opposite Maya Hotel', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 4.5;
+  doc.text('Baghpat, Uttar Pradesh', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 4.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(17, 24, 39); // Slate 900
+  doc.text(`+91 8191868626`, pageWidth / 2, currentY, { align: 'center' });
+  currentY += 6;
+
+  // Thin line below header
+  doc.setDrawColor(229, 231, 235); // Gray 200
+  doc.setLineWidth(0.3);
+  doc.line(leftMargin, currentY, rightMargin, currentY);
+  currentY += 6;
+
+  // 2. TAX INVOICE TITLE
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(17, 24, 39);
+  doc.text(isCopy ? 'TAX INVOICE (COPY)' : 'TAX INVOICE', pageWidth / 2, currentY, { align: 'center' });
+  currentY += 6;
+
+  doc.line(leftMargin, currentY, rightMargin, currentY);
+  currentY += 6;
+
+  // 3. METADATA GRID (Two-Column Layout)
+  const gridCol1 = leftMargin;
+  const gridCol2 = leftMargin + 85;
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(55, 65, 81); // Gray 700
+
+  // Column 1 Labels
+  doc.text('Invoice No :', gridCol1, currentY);
+  doc.text('Order ID :', gridCol1, currentY + 5);
+  doc.text('Transaction ID :', gridCol1, currentY + 10);
+  doc.text('Date / Time :', gridCol1, currentY + 15);
+
+  // Column 2 Labels
+  doc.text('Customer :', gridCol2, currentY);
+  doc.text('Phone :', gridCol2, currentY + 5);
+  doc.text('Order Type :', gridCol2, currentY + 10);
+  doc.text('Cashier :', gridCol2, currentY + 15);
+
+  // Values (normal style)
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(17, 24, 39);
+
+  const formattedDate = new Date(billObj.exitTime).toLocaleString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  // Column 1 Values
+  doc.text(billObj.billNumber, gridCol1 + 28, currentY);
+  doc.text(`ORD-${billObj.billNumber.split('-')[1] || billObj.billNumber}`, gridCol1 + 28, currentY + 5);
+  doc.text(`TXN-${settings.waPhoneNumberId || '8191868626'}`, gridCol1 + 28, currentY + 10);
+  doc.text(formattedDate, gridCol1 + 28, currentY + 15);
+
+  // Column 2 Values
+  doc.text(billObj.customerName || 'Walk-in Guest', gridCol2 + 22, currentY);
+  doc.text(billObj.customerPhone || 'N/A', gridCol2 + 22, currentY + 5);
+  doc.text(billObj.location || 'Takeaway', gridCol2 + 22, currentY + 10);
+  doc.text(billObj.cashierName || 'Administrator', gridCol2 + 22, currentY + 15);
+
+  currentY += 22;
+
+  // Thin line below metadata
+  doc.line(leftMargin, currentY, rightMargin, currentY);
+  currentY += 4;
+
+  // 4. ITEMS TABLE
+  const tableData: any[] = billObj.orderedItems.map(item => [
+    item.name,
+    item.quantity.toString(),
+    `Rs. ${item.price.toFixed(0)}`,
+    `Rs. ${(item.price * item.quantity).toFixed(0)}`
+  ]);
+
+  if (billObj.basementCharges > 0) {
+    tableData.push([
+      `Basement Seating Fee (${billObj.timeSpentMinutes} mins)`,
+      '1',
+      `Rs. ${billObj.basementCharges.toFixed(0)}`,
+      `Rs. ${billObj.basementCharges.toFixed(0)}`
+    ]);
+  }
+
+  autoTable(doc, {
+    startY: currentY,
+    margin: { left: leftMargin, right: pageWidth - rightMargin },
+    head: [['Item', 'Qty', 'Price', 'Amount']],
+    body: tableData,
+    theme: 'plain',
+    styles: {
+      fontSize: 9,
+      cellPadding: 2.5,
+      textColor: [17, 24, 39],
+      valign: 'middle'
+    },
+    headStyles: {
+      textColor: [17, 24, 39],
+      fontSize: 9.5,
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { cellWidth: 'auto', halign: 'left' },
+      1: { cellWidth: 15, halign: 'right' },
+      2: { cellWidth: 25, halign: 'right' },
+      3: { cellWidth: 25, halign: 'right', fontStyle: 'bold' } // Amount column in bold
+    },
+    didParseCell: (data) => {
+      if (data.row.section === 'body') {
+        data.cell.styles.lineColor = [243, 244, 246]; // Very light borders
+        data.cell.styles.lineWidth = 0.1;
+      }
+    }
+  });
+
+  let finalY = (doc as any).lastAutoTable.finalY + 6;
+
+  // 5. BILLING TOTALS
+  const summaryWidth = 65;
+  const summaryX = rightMargin - summaryWidth;
+
+  const drawTotalLine = (label: string, val: string, isBold: boolean = false, yPos: number) => {
+    doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+    doc.setFontSize(isBold ? 11 : 9.5);
+    doc.setTextColor(17, 24, 39);
+    doc.text(label, summaryX, yPos);
+    doc.setFont('helvetica', 'bold'); // Always bold value totals
+    doc.text(val, rightMargin, yPos, { align: 'right' });
+  };
+
+  let summaryY = finalY + 4;
+  drawTotalLine('Subtotal', `Rs. ${billObj.subtotal.toFixed(2)}`, false, summaryY);
+  
+  summaryY += 5;
+  drawTotalLine(`GST (${settings.gstPercentage || 0}%)`, `Rs. ${billObj.tax.toFixed(2)}`, false, summaryY);
+  
+  summaryY += 5;
+  drawTotalLine('Discount', `Rs. ${billObj.discount.toFixed(2)}`, false, summaryY);
+
+  summaryY += 7;
+  doc.setDrawColor(17, 24, 39);
+  doc.setLineWidth(0.4);
+  doc.line(summaryX, summaryY - 4, rightMargin, summaryY - 4);
+  doc.line(summaryX, summaryY - 3.2, rightMargin, summaryY - 3.2);
+
+  drawTotalLine('GRAND TOTAL', `Rs. ${billObj.grandTotal.toFixed(2)}`, true, summaryY);
+  doc.line(summaryX, summaryY + 1.8, rightMargin, summaryY + 1.8);
+
+  // Status metrics below totals
+  summaryY += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128); // Gray 500
+  doc.text('Payment Method :', summaryX, summaryY);
+  doc.text('Status :', summaryX, summaryY + 5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(17, 24, 39);
+  doc.text(billObj.paymentMethod || 'Cash', rightMargin, summaryY, { align: 'right' });
+
+  const isPaid = billObj.status?.toLowerCase() === 'paid';
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(isPaid ? 22 : 220, isPaid ? 101 : 38, isPaid ? 52 : 38);
+  doc.text(isPaid ? 'PAID' : 'UNPAID', rightMargin, summaryY + 5, { align: 'right' });
+
+  // 6. THANK YOU NOTE & FOOTER BLOCK
+  currentY = summaryY + 18;
+
+  // Retrieve dynamic guest visit number count
+  let visitCount = 1;
+  try {
+    const { getBills } = await import('./db');
+    const allBills = await getBills();
+    const customerBills = allBills.filter(b => b.customerPhone && b.customerPhone.trim() === billObj.customerPhone.trim());
+    visitCount = customerBills.length;
+    if (visitCount === 0) visitCount = 1;
+  } catch (err) {
+    console.warn('Failed to calculate dynamic visit count:', err);
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(17, 24, 39);
+  doc.text(`Thank you, ${billObj.customerName || 'Guest'}!`, leftMargin, currentY);
+  currentY += 5.5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(75, 85, 99); // Gray 600
+  doc.text(`This is your visit #${visitCount} at Chapter One Cafe.`, leftMargin, currentY);
+  currentY += 4.5;
+  doc.text('We truly appreciate your visit. We hope to serve you again soon.', leftMargin, currentY);
+
+  // 7. GREEN PAPER SAVING BANNER
+  currentY += 8;
+  doc.setFillColor(240, 253, 244); // Light green fill (#f0fdf4)
+  doc.setDrawColor(220, 252, 231); // Light green border (#dcfce7)
+  doc.setLineWidth(0.25);
+  doc.roundedRect(leftMargin, currentY, rightMargin - leftMargin, 12, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(21, 128, 61); // Green 700 (#15803d)
+  doc.text('Thank you for choosing a digital invoice.', leftMargin + 4, currentY + 4.5);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.text('We serve a digital menu to reduce paper waste and build a greener future.', leftMargin + 4, currentY + 8.5);
+
+  return doc;
+};
+
 export const downloadReceiptPDF = async (
   billObj: Bill,
   settings: CafeSettings,
   isCopy: boolean = false
 ) => {
-  // A5 format: 148mm x 210mm
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a5'
-  });
-
-  // 1. Center/Left aligned Logo & Shop Details Header
-  let startY = 12;
-  try {
-    const img = await loadImage(logo);
-    if (img) {
-      // Draw logo on the left (X: 15, Y: 12)
-      doc.addImage(img, 'JPEG', 15, startY, 18, 18);
-    }
-  } catch (err) {
-    console.warn('Failed to load logo for PDF receipt:', err);
-  }
-
-  // Cafe Details (aligned next to the logo at X: 36)
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.setTextColor(92, 61, 46); // Warm Coffee primary: #5c3d2e
-  doc.text(settings.name, 36, startY + 5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105); // Slate 600
-  doc.text(settings.address, 36, startY + 10, { maxWidth: 55 });
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(51, 65, 85); // Slate 700
-  doc.text(`Phone: ${settings.phone}`, 36, startY + 17);
-
-  // Right-aligned Invoice Title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(92, 61, 46); // Coffee
-  doc.text('INVOICE', 133, startY + 5, { align: 'right' });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(15, 23, 42); // Slate 900
-  doc.text(billObj.billNumber, 133, startY + 10, { align: 'right' });
-
-  if (isCopy) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(185, 28, 28); // Red 700
-    doc.text('(COPY)', 133, startY + 15, { align: 'right' });
-  }
-
-  // Top heavy divider line
-  startY += 21;
-  doc.setDrawColor(92, 61, 46);
-  doc.setLineWidth(0.4);
-  doc.line(15, startY, 133, startY);
-  doc.setLineWidth(0.1);
-  doc.line(15, startY + 0.6, 133, startY + 0.6);
-
-  // 2. Metadata Box (Rounded Card)
-  startY += 4;
-  doc.setFillColor(250, 248, 246); // Warm cream tint: #faf8f6
-  doc.roundedRect(15, startY, 118, 19, 2, 2, 'F');
-
-  // Metadata content
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(120, 90, 75); // Brown accent
-  doc.text('GUEST DETAILS', 18, startY + 4.5);
-  doc.text('SESSION DETAILS', 78, startY + 4.5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85); // Slate 700
-  doc.text(`Name: ${billObj.customerName}`, 18, startY + 10);
-  doc.text(`Phone: ${billObj.customerPhone}`, 18, startY + 14.5);
-
-  const formattedDate = (billObj.location === 'Main Hall' || billObj.location === 'Takeaway')
-    ? new Date(billObj.exitTime).toLocaleDateString()
-    : new Date(billObj.exitTime).toLocaleString();
-  doc.text(`Date: ${formattedDate}`, 78, startY + 10);
-
-  let areaText = `Area: ${billObj.location}`;
-  if (billObj.location === 'Basement') {
-    const eTime = new Date(billObj.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const xTime = new Date(billObj.exitTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    areaText = `Area: Basement (${eTime} - ${xTime}, ${billObj.timeSpentMinutes} mins)`;
-  }
-  doc.text(areaText, 78, startY + 14.5);
-
-  // Separator before items table
-  startY += 23;
-  doc.setDrawColor(226, 232, 240); // Slate 200
-  doc.setLineWidth(0.2);
-  doc.line(15, startY, 133, startY);
-
-  // 3. Products Table
-  const tableData = billObj.orderedItems.map(item => [
-    item.name,
-    item.price.toFixed(2),
-    `${item.quantity}x`,
-    (item.price * item.quantity).toFixed(2)
-  ]);
-
-  if (billObj.basementCharges > 0) {
-    tableData.push([
-      `Basement Seating Fee (${billObj.timeSpentMinutes} min)`,
-      (billObj.basementCharges / 1).toFixed(2),
-      '1x',
-      billObj.basementCharges.toFixed(2)
-    ]);
-  }
-
-  autoTable(doc, {
-    startY: startY + 2.5,
-    margin: { left: 15, right: 15 },
-    head: [['Item Name', 'Unit Price', 'Qty', 'Total']],
-    body: tableData,
-    theme: 'striped',
-    styles: {
-      fontSize: 8,
-      cellPadding: 1.8,
-      font: 'helvetica',
-      textColor: [51, 65, 85]
-    },
-    headStyles: {
-      fontStyle: 'bold',
-      fillColor: [92, 61, 46], // Coffee color primary
-      textColor: [255, 255, 255],
-      fontSize: 8.5
-    },
-    columnStyles: {
-      0: { cellWidth: 'auto' },
-      1: { cellWidth: 22, halign: 'right' },
-      2: { cellWidth: 15, halign: 'center' },
-      3: { cellWidth: 22, halign: 'right' }
-    },
-    didParseCell: (data) => {
-      if (data.row.section === 'body') {
-        if (data.row.index % 2 === 0) {
-          data.cell.styles.fillColor = [252, 250, 248]; // Light warm zebra striping
-        }
-      }
-    }
-  });
-
-  let finalY = (doc as any).lastAutoTable.finalY + 8;
-
-  // 4. Billing Totals Area
-  const drawTotalRow = (label: string, value: string, isBold: boolean = false, yOffset: number = 0) => {
-    if (isBold) {
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42); // Slate 900
-      doc.setFontSize(9.5);
-    } else {
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(71, 85, 105); // Slate 600
-      doc.setFontSize(8);
-    }
-    doc.text(label, 104, finalY + yOffset, { align: 'right' });
-    doc.text(value, 133, finalY + yOffset, { align: 'right' });
-  };
-
-  let offset = 0;
-  drawTotalRow('Subtotal:', `${billObj.subtotal.toFixed(2)}`, false, offset);
-
-  if (billObj.discount > 0) {
-    offset += 5;
-    drawTotalRow('Discount:', `-${billObj.discount.toFixed(2)}`, false, offset);
-  }
-
-  if (billObj.extraCharges > 0) {
-    offset += 5;
-    drawTotalRow('Extra Charges:', `+${billObj.extraCharges.toFixed(2)}`, false, offset);
-  }
-
-  offset += 5;
-  drawTotalRow(`GST (${settings.gstPercentage}%):`, `${billObj.tax.toFixed(2)}`, false, offset);
-
-  // Grand Total Box
-  offset += 6.5;
-  doc.setDrawColor(92, 61, 46);
-  doc.setFillColor(252, 250, 248);
-  doc.setLineWidth(0.25);
-  doc.rect(78, finalY + offset - 4.8, 55, 7.2, 'FD'); // background highlight box
-  drawTotalRow('Grand Total:', `${settings.currency}${billObj.grandTotal.toFixed(2)}`, true, offset - 0.2);
-
-  // 5. Cashier & Payment Details (Left side, aligned with Totals)
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139); // Slate 500
-  doc.text(`Payment: ${billObj.paymentMethod} (${billObj.status})`, 15, finalY);
-  doc.text(`Cashier: ${billObj.cashierName}`, 15, finalY + 4.5);
-
-  // Footer divider line
-  const footerY = Math.max(193, finalY + offset + 14);
-  
-  // Only draw final divider & footer if we haven't overflowed onto a new page, or let it flow naturally
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.2);
-  doc.line(15, footerY - 4.5, 133, footerY - 4.5);
-
-  // 6. Centered Footer Message
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(8);
-  doc.setTextColor(120, 100, 90); // Coffee footer text
-  doc.text(settings.receiptFooter, 74, footerY, { align: 'center', maxWidth: 110 });
-
-  // Save
+  const doc = await buildReceiptPDFDoc(billObj, settings, isCopy);
   const prefix = isCopy ? 'COPY_' : '';
   const cleanName = billObj.customerName.replace(/\s+/g, '_');
   doc.save(`${prefix}${billObj.billNumber}_${cleanName}.pdf`);
+};
+
+export const generateReceiptPDFBlob = async (
+  billObj: Bill,
+  settings: CafeSettings
+): Promise<Blob> => {
+  const doc = await buildReceiptPDFDoc(billObj, settings);
+  return doc.output('blob');
 };

@@ -42,6 +42,7 @@ export interface Customer {
   orderedItems: OrderedItem[];
   cashierId?: string;
   cashierName?: string;
+  isSynced?: boolean;
 }
 
 export interface PaymentDetails {
@@ -90,6 +91,18 @@ export interface CafeSettings {
   googleSheetsUrl?: string;
   groqApiKey?: string;
   geminiApiKey?: string;
+  crmScriptUrl?: string;
+  waAccessToken?: string;
+  waPhoneNumberId?: string;
+  waWabaId?: string;
+  waTemplateName?: string;
+  waLanguage?: string;
+  waVerifyToken?: string;
+  reviewEnableAuto?: boolean;
+  reviewDelayMinutes?: number;
+  reviewTemplateName?: string;
+  reviewSchedulerEnabled?: boolean;
+  reviewRetryEnabled?: boolean;
 }
 
 export interface AuditLog {
@@ -119,4 +132,74 @@ export interface InventoryLog {
   reason: string;
   timestamp: string;
   user: string;
+}
+
+export interface Expense {
+  id: string;
+  date: string; // YYYY-MM-DD
+  itemName: string;
+  category: string; // e.g. Kitchen, Coffee Bar, Cleaning, Utilities, Other
+  quantity: string; // e.g. 5 kg, 2 packets, 10 liters
+  price: number;
+  purchaser: string;
+  notes?: string;
+  timestamp: string; // ISO String
+}
+
+export interface CRMProfile {
+  customerId: string;
+  name: string;
+  phone: string;
+  visitCount: number;
+  memberSince: string;
+  lastVisit: string;
+  totalLifetimeSpend: number;
+  averageBill: number;
+  favouriteItems: string[];
+  favouriteCategory: string;
+  recentOrders: string[];
+  orderFrequency: string;
+  whatsappHistory: any[];
+  invoiceHistory: {
+    billId: string;
+    billNumber: string;
+    grandTotal: number;
+    date: string;
+  }[];
+  deliveryStatusHistory: any[];
+  readStatus: string;
+  googleReviewStatus: string;
+  loyaltyPoints: number;
+  tags: string[];
+  customLabels: string[];
+  notes?: string[];
+}
+
+export interface TimelineEvent {
+  id: string;
+  customerId: string;
+  timestamp: string;
+  type: 'created' | 'visited' | 'invoice_generated';
+  description: string;
+}
+
+export interface LoyaltyTransaction {
+  id: string;
+  customerId: string;
+  pointsAdded: number;
+  pointsSubtracted: number;
+  type: 'earn' | 'redeem' | 'birthday_bonus';
+  reason: string;
+  timestamp: string;
+  billId?: string;
+}
+
+export interface SyncTask {
+  id: string;
+  type: 'CHECKIN' | 'CHECKOUT' | 'EXPENSE' | 'AUDIT' | 'CRM_UPSERT' | 'CRM_TIMELINE' | 'WHATSAPP_SEND';
+  payload: any;
+  timestamp: string;
+  status: 'pending' | 'processing' | 'failed';
+  retryCount: number;
+  lastError?: string;
 }

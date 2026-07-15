@@ -17,8 +17,7 @@ import type { Bill, CafeSettings, User as UserType } from '../types';
 import { getBills, deleteBill, saveAuditLog, syncToGoogleSheets } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
-import { generateAIWhatsAppMessage } from '../utils/ai';
-import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
+import { useToast } from '../context/toastContext';
 
 
 interface CustomerHistoryProps {
@@ -32,6 +31,8 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
   currentUser,
   lastSyncTime
 }) => {
+  const toast = useToast();
+  const [isAiSharing, setIsAiSharing] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -168,31 +169,17 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
   };
 
   const reShareWhatsApp = async (billObj: Bill) => {
-    let visitCount = 1;
-    let aiIntro = '';
+    setIsAiSharing(true);
+    toast.info('Sending Invoice', 'Uploading and generating receipt template...');
     try {
-      const allBills = await getBills();
-      const customerPhoneClean = billObj.customerPhone.trim();
-      visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
-    } catch (err) {
-      console.warn('Failed to retrieve visit history:', err);
+      const { sendCheckoutInvoice } = await import('../utils/whatsappCloud');
+      sendCheckoutInvoice(billObj, settings);
+      toast.success('Dispatched', `Invoice sent to customer ${billObj.customerName} in the background.`);
+    } catch (err: any) {
+      toast.error('Send Failed', err.message);
+    } finally {
+      setIsAiSharing(false);
     }
-
-    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
-      try {
-        aiIntro = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
-      } catch (err) {
-        console.warn('Groq AI greeting failed:', err);
-      }
-    }
-
-    const receiptMessage = buildWhatsAppMessage(billObj, visitCount, aiIntro);
-
-    navigator.clipboard.writeText(receiptMessage).then(() => {
-      const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');
-      const encodedMsg = encodeURIComponent(receiptMessage);
-      window.open(`https://api.whatsapp.com/send?phone=${phoneClean}&text=${encodedMsg}`, '_blank');
-    });
   };
 
   return (
@@ -324,8 +311,9 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); reShareWhatsApp(bill); }}
-                          className="p-1.5 rounded-lg border border-green-100 bg-green-50/50 hover:bg-green-50 text-green-600 cursor-pointer"
-                          title="Share to WhatsApp"
+                          disabled={isAiSharing}
+                          className="p-1.5 rounded-lg border border-green-100 bg-green-50/50 hover:bg-green-50 text-green-600 disabled:bg-green-50/20 disabled:text-green-400 cursor-pointer disabled:cursor-not-allowed transition-all"
+                          title="Send to WhatsApp"
                         >
                           <Share2 className="w-3.5 h-3.5" />
                         </button>
@@ -478,6 +466,12 @@ export const CustomerHistory: React.FC<CustomerHistoryProps> = ({
           settings={settings}
           onDownloadPDF={downloadOldPDF}
           onShareWhatsApp={reShareWhatsApp}
+          isAiSharing={isAiSharing}
+          currentUser={currentUser}
+          onBillUpdate={(updated) => {
+            setBills(prev => prev.map(b => b.id === updated.id ? updated : b));
+            setSelectedBill(updated);
+          }}
         />
       )}
     </div>

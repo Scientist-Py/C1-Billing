@@ -1,9 +1,90 @@
-import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User, InventoryItem, InventoryLog } from '../types';
+import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User, InventoryItem, InventoryLog, Expense } from '../types';
 
 const DB_NAME = 'ChapterOneCafeDB';
-const DB_VERSION = 4;
+const DB_VERSION = 8;
 
 let dbInstance: IDBDatabase | null = null;
+const localEditTimes = new Map<string, number>();
+class PersistedSyncExclusions {
+  private key: string;
+  private lifetime: number;
+
+  constructor(key: string, lifetime: number = 120000) {
+    this.key = key;
+    this.lifetime = lifetime;
+  }
+
+  private get(): Record<string, number> {
+    try {
+      const val = localStorage.getItem(this.key);
+      return val ? JSON.parse(val) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  private save(exclusions: Record<string, number>) {
+    try {
+      localStorage.setItem(this.key, JSON.stringify(exclusions));
+    } catch (e) {}
+  }
+
+  add(id: string) {
+    const data = this.get();
+    data[id] = Date.now();
+    this.save(data);
+    return this;
+  }
+
+  has(id: string): boolean {
+    const data = this.get();
+    const timestamp = data[id];
+    if (!timestamp) return false;
+    if (Date.now() - timestamp > this.lifetime) {
+      delete data[id];
+      this.save(data);
+      return false;
+    }
+    return true;
+  }
+
+  delete(id: string): boolean {
+    const data = this.get();
+    if (id in data) {
+      delete data[id];
+      this.save(data);
+      return true;
+    }
+    return false;
+  }
+
+  clear() {
+    this.save({});
+  }
+
+  get size(): number {
+    return Array.from(this).length;
+  }
+
+  [Symbol.iterator]() {
+    const data = this.get();
+    const now = Date.now();
+    const validIds = Object.entries(data)
+      .filter(([_, ts]) => now - ts <= this.lifetime)
+      .map(([id]) => id);
+    return validIds[Symbol.iterator]();
+  }
+
+  values() {
+    return this[Symbol.iterator]();
+  }
+}
+
+const customerSyncExclusions = new PersistedSyncExclusions('pos_customer_exclusions');
+const billSyncExclusions = new PersistedSyncExclusions('pos_bill_exclusions');
+const inventorySyncExclusions = new PersistedSyncExclusions('pos_inventory_exclusions');
+const expenseSyncExclusions = new PersistedSyncExclusions('pos_expense_exclusions');
+const menuSyncExclusions = new PersistedSyncExclusions('pos_menu_exclusions');
 
 export const initDB = (): Promise<IDBDatabase> => {
   if (dbInstance) return Promise.resolve(dbInstance);
@@ -91,6 +172,21 @@ export const initDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains('inventoryLogs')) {
         db.createObjectStore('inventoryLogs', { keyPath: 'id' });
       }
+
+      // Create Expenses store
+      if (!db.objectStoreNames.contains('expenses')) {
+        db.createObjectStore('expenses', { keyPath: 'id' });
+      }
+
+      // Create Sync Tasks store
+      if (!db.objectStoreNames.contains('syncTasks')) {
+        db.createObjectStore('syncTasks', { keyPath: 'id' });
+      }
+
+      // Create Scheduled Jobs store
+      if (!db.objectStoreNames.contains('scheduledJobs')) {
+        db.createObjectStore('scheduledJobs', { keyPath: 'id' });
+      }
     };
   });
 };
@@ -126,7 +222,12 @@ export const seedDefaultData = async () => {
       receiptFooter: 'Thank you for visiting Chapter One Cafe! Please come again.',
       whatsappTemplate: 'Hello {name}, thank you for dining with us! Your total bill is {amount}. Download details here: {link}',
       groqApiKey: targetKey,
-      geminiApiKey: geminiTargetKey
+      geminiApiKey: geminiTargetKey,
+      reviewEnableAuto: false,
+      reviewDelayMinutes: 10,
+      reviewTemplateName: 'google_review_request',
+      reviewSchedulerEnabled: true,
+      reviewRetryEnabled: true
     };
     await saveSettings(defaultSettings);
   } else {
@@ -137,6 +238,26 @@ export const seedDefaultData = async () => {
     }
     if (!settingsObj.geminiApiKey || settingsObj.geminiApiKey.trim().length === 0) {
       settingsObj.geminiApiKey = geminiTargetKey;
+      updated = true;
+    }
+    if (settingsObj.reviewEnableAuto === undefined) {
+      settingsObj.reviewEnableAuto = false;
+      updated = true;
+    }
+    if (settingsObj.reviewDelayMinutes === undefined) {
+      settingsObj.reviewDelayMinutes = 10;
+      updated = true;
+    }
+    if (settingsObj.reviewTemplateName === undefined) {
+      settingsObj.reviewTemplateName = 'google_review_request';
+      updated = true;
+    }
+    if (settingsObj.reviewSchedulerEnabled === undefined) {
+      settingsObj.reviewSchedulerEnabled = true;
+      updated = true;
+    }
+    if (settingsObj.reviewRetryEnabled === undefined) {
+      settingsObj.reviewRetryEnabled = true;
       updated = true;
     }
     if (updated) {
@@ -152,7 +273,6 @@ export const seedDefaultData = async () => {
     u.id === 'u2' || 
     u.id === 'u1' || 
     u.pin === 'beer' || 
-    u.pin === 'nancy' || 
     u.pin === 'ravi'
   );
   if (users.length === 0 || hasOldUsers) {
@@ -165,7 +285,6 @@ export const seedDefaultData = async () => {
     });
     const defaultUsers: User[] = [
       { id: 'ADMIN', username: 'Administrator', pin: '160', role: 'admin' },
-      { id: 'C1-Nancy', username: 'Nancy', pin: '180', role: 'staff' },
       { id: 'C1-Ravi', username: 'Ravi', pin: '200', role: 'staff' }
     ];
     for (const user of defaultUsers) {
@@ -378,6 +497,7 @@ export const getInventoryItem = (id: string): Promise<InventoryItem | null> => {
 };
 
 export const saveInventoryItem = (item: InventoryItem): Promise<void> => {
+  localEditTimes.set(item.id, Date.now());
   return getStore('inventory', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.put(item);
@@ -388,6 +508,7 @@ export const saveInventoryItem = (item: InventoryItem): Promise<void> => {
 };
 
 export const deleteInventoryItem = (id: string): Promise<void> => {
+  inventorySyncExclusions.add(id);
   return getStore('inventory', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.delete(id);
@@ -453,6 +574,52 @@ export const adjustStock = async (
   syncToGoogleSheets('LOG_INVENTORY', log);
 };
 
+// === EXPENSE ACTIONS ===
+export const getExpenses = (): Promise<Expense[]> => {
+  return getStore('expenses').then(({ store }) => {
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const list = request.result || [];
+        // Sort newest first
+        list.sort((a: Expense, b: Expense) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        resolve(list);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+};
+
+export const saveExpense = (expense: Expense, localOnly = false): Promise<void> => {
+  return getStore('expenses', 'readwrite').then(({ store, transaction }) => {
+    return new Promise((resolve, reject) => {
+      store.put(expense);
+      transaction.oncomplete = () => {
+        if (!localOnly) {
+          localEditTimes.set(`expense_${expense.id}`, Date.now());
+          syncToGoogleSheets('SAVE_EXPENSE', expense).catch(console.error);
+        }
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+    });
+  });
+};
+
+export const deleteExpense = (id: string): Promise<void> => {
+  expenseSyncExclusions.add(id);
+  return getStore('expenses', 'readwrite').then(({ store, transaction }) => {
+    return new Promise((resolve, reject) => {
+      store.delete(id);
+      transaction.oncomplete = () => {
+        syncToGoogleSheets('DELETE_EXPENSE', { id }).catch(console.error);
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error);
+    });
+  });
+};
+
 // === MENU ACTIONS ===
 export const getMenu = (): Promise<MenuItem[]> => {
   return getStore('menu').then(({ store }) => {
@@ -475,6 +642,7 @@ export const saveMenuItem = (item: MenuItem): Promise<void> => {
 };
 
 export const deleteMenuItem = (id: string): Promise<void> => {
+  menuSyncExclusions.add(id);
   return getStore('menu', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.delete(id);
@@ -509,6 +677,7 @@ export const getCustomer = (id: string): Promise<Customer | null> => {
 };
 
 export const saveCustomer = (customer: Customer): Promise<void> => {
+  localEditTimes.set(customer.id, Date.now());
   return getStore('customers', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.put(customer);
@@ -522,12 +691,11 @@ export const saveCustomer = (customer: Customer): Promise<void> => {
   });
 };
 
-// Memory cache to prevent race conditions during sync write latencies
-const syncExclusions = new Set<string>();
+
 
 export const deleteCustomer = async (id: string): Promise<void> => {
   // Immediately block this ID from being re-synced from remote
-  syncExclusions.add(id);
+  customerSyncExclusions.add(id);
 
   try {
     const customer = await getCustomer(id);
@@ -549,6 +717,7 @@ export const deleteCustomer = async (id: string): Promise<void> => {
 };
 
 export const deleteBill = (id: string): Promise<void> => {
+  billSyncExclusions.add(id);
   return getStore('bills', 'readwrite').then(({ store }) => {
     return new Promise((resolve, reject) => {
       const request = store.delete(id);
@@ -813,7 +982,7 @@ export const syncToGoogleSheets = async (action: string, payload: any): Promise<
   }
 };
 
-export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean; message?: string }> => {
+export const pullAndMergeFromGoogleSheets = async (selectedCustomerId?: string | null): Promise<{ success: boolean; message?: string }> => {
   const settings = await getSettings();
   if (!settings || !settings.googleSheetsUrl) {
     return { success: false, message: 'Google Sheets URL not configured' };
@@ -837,46 +1006,107 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
     const remoteCustomers = (result.customers || []) as Customer[];
     const remoteBills = (result.bills || []) as Bill[];
 
-    // Filter out remote customers that are in the syncExclusions set
+    // Filter out remote customers that are in the customerSyncExclusions set
     const filteredRemoteCustomers = remoteCustomers.filter(c => {
-      if (syncExclusions.has(c.id)) {
+      if (customerSyncExclusions.has(c.id)) {
         return false;
       }
       return true;
     });
 
-    // Clean up syncExclusions for IDs that are no longer returned by the server
+    // Clean up customerSyncExclusions for IDs that are no longer returned by the server
     const remoteCustomerIds = new Set(remoteCustomers.map(c => c.id));
-    for (const excludedId of Array.from(syncExclusions)) {
+    for (const excludedId of Array.from(customerSyncExclusions)) {
       if (!remoteCustomerIds.has(excludedId)) {
-        syncExclusions.delete(excludedId);
+        customerSyncExclusions.delete(excludedId);
       }
     }
 
-    // 1. Clear and merge Active Customers
+    // 1. Smart diff merge Active Customers (prevents overwriting pending local edits)
     await getStore('customers', 'readwrite').then(({ store }) => {
       return new Promise<void>((resolve, reject) => {
-        const clearReq = store.clear();
-        clearReq.onsuccess = () => {
-          if (filteredRemoteCustomers.length === 0) {
+        const getAllReq = store.getAll();
+        getAllReq.onsuccess = () => {
+          const localCustomers = (getAllReq.result || []) as Customer[];
+          
+          // Build a map of remote customers by ID
+          const remoteMap = new Map<string, Customer>();
+          for (const c of filteredRemoteCustomers) {
+            remoteMap.set(c.id, c);
+          }
+          
+          const now = Date.now();
+          const lockDuration = 120000; // 120 seconds (2 minutes) cooldown lock
+          
+          const toDelete: string[] = [];
+          const toPut: Customer[] = [];
+          
+          for (const localCust of localCustomers) {
+            const lastEdit = localEditTimes.get(localCust.id) || 0;
+            const isLocked = ((now - lastEdit) < lockDuration) || (selectedCustomerId !== undefined && selectedCustomerId !== null && localCust.id === selectedCustomerId);
+            
+            if (isLocked) {
+              // Local changes are locked; do not overwrite or delete
+              remoteMap.delete(localCust.id);
+              continue;
+            }
+            
+            const remoteCust = remoteMap.get(localCust.id);
+            if (!remoteCust) {
+              // Not present on remote server and not locked locally
+              // Only delete locally if it has already synced to Google Sheets in the past!
+              // Otherwise, it's a new local check-in that hasn't synced yet; do not delete it!
+              if (localCust.isSynced) {
+                toDelete.push(localCust.id);
+              }
+            } else {
+              // Present on remote server and not locked locally -> update with remote data
+              // Mark as synced since it exists on the remote sheet
+              remoteCust.isSynced = true;
+              toPut.push(remoteCust);
+              // Remove from remoteMap so we don't process it again
+              remoteMap.delete(localCust.id);
+            }
+          }
+          
+          // Any remaining remote customers in remoteMap are new -> add them
+          for (const remoteCust of remoteMap.values()) {
+            remoteCust.isSynced = true; // since it comes from remote sheet
+            toPut.push(remoteCust);
+          }
+          
+          // Execute database updates
+          let pendingOps = toDelete.length + toPut.length;
+          if (pendingOps === 0) {
             resolve();
             return;
           }
-          let count = 0;
+          
           let hasFailed = false;
-          for (const c of filteredRemoteCustomers) {
-            const req = store.put(c);
-            req.onsuccess = () => {
-              count++;
-              if (count === filteredRemoteCustomers.length && !hasFailed) resolve();
-            };
-            req.onerror = () => {
+          const checkDone = () => {
+            pendingOps--;
+            if (pendingOps === 0 && !hasFailed) resolve();
+          };
+          
+          for (const id of toDelete) {
+            const delReq = store.delete(id);
+            delReq.onsuccess = checkDone;
+            delReq.onerror = () => {
               hasFailed = true;
-              reject(req.error);
+              reject(delReq.error);
+            };
+          }
+          
+          for (const c of toPut) {
+            const putReq = store.put(c);
+            putReq.onsuccess = checkDone;
+            putReq.onerror = () => {
+              hasFailed = true;
+              reject(putReq.error);
             };
           }
         };
-        clearReq.onerror = () => reject(clearReq.error);
+        getAllReq.onerror = () => reject(getAllReq.error);
       });
     });
 
@@ -885,17 +1115,26 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
       return new Promise<void>((resolve, reject) => {
         const clearReq = store.clear();
         clearReq.onsuccess = () => {
-          if (remoteBills.length === 0) {
+          // Clean up billSyncExclusions for IDs that are no longer returned by the server
+          const remoteBillIds = new Set(remoteBills.map(b => b.id));
+          for (const excludedId of Array.from(billSyncExclusions)) {
+            if (!remoteBillIds.has(excludedId)) {
+              billSyncExclusions.delete(excludedId);
+            }
+          }
+
+          const filteredRemoteBills = remoteBills.filter(b => !billSyncExclusions.has(b.id));
+          if (filteredRemoteBills.length === 0) {
             resolve();
             return;
           }
           let count = 0;
           let hasFailed = false;
-          for (const b of remoteBills) {
+          for (const b of filteredRemoteBills) {
             const req = store.put(b);
             req.onsuccess = () => {
               count++;
-              if (count === remoteBills.length && !hasFailed) resolve();
+              if (count === filteredRemoteBills.length && !hasFailed) resolve();
             };
             req.onerror = () => {
               hasFailed = true;
@@ -907,39 +1146,94 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
       });
     });
 
-    // 3. Clear and merge Inventory Items
+    // 3. Smart diff merge Inventory Items (prevents overwriting pending local edits)
     if (result.inventory && Array.isArray(result.inventory)) {
-      const remoteInventory = result.inventory as InventoryItem[];
+      const rawInventory = result.inventory as InventoryItem[];
+      const remoteInventoryIds = new Set(rawInventory.map(item => item.id));
+      for (const excludedId of Array.from(inventorySyncExclusions)) {
+        if (!remoteInventoryIds.has(excludedId)) {
+          inventorySyncExclusions.delete(excludedId);
+        }
+      }
+      const remoteInventory = rawInventory.filter(item => !inventorySyncExclusions.has(item.id));
       await getStore('inventory', 'readwrite').then(({ store }) => {
         return new Promise<void>((resolve, reject) => {
-          const clearReq = store.clear();
-          clearReq.onsuccess = () => {
-            if (remoteInventory.length === 0) {
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => {
+            const localInventory = (getAllReq.result || []) as InventoryItem[];
+            
+            const remoteMap = new Map<string, InventoryItem>();
+            for (const item of remoteInventory) {
+              remoteMap.set(item.id, item);
+            }
+            
+            const now = Date.now();
+            const lockDuration = 20000; // 20 seconds cooldown lock
+            
+            const toDelete: string[] = [];
+            const toPut: InventoryItem[] = [];
+            
+            for (const localItem of localInventory) {
+              const lastEdit = localEditTimes.get(localItem.id) || 0;
+              const isLocked = (now - lastEdit) < lockDuration;
+              
+              if (isLocked) {
+                // Local changes are locked; do not overwrite or delete
+                remoteMap.delete(localItem.id);
+                continue;
+              }
+              
+              const remoteItem = remoteMap.get(localItem.id);
+              if (!remoteItem) {
+                toDelete.push(localItem.id);
+              } else {
+                toPut.push(remoteItem);
+                remoteMap.delete(localItem.id);
+              }
+            }
+            
+            for (const remoteItem of remoteMap.values()) {
+              toPut.push(remoteItem);
+            }
+            
+            let pendingOps = toDelete.length + toPut.length;
+            if (pendingOps === 0) {
               resolve();
               return;
             }
-            let count = 0;
+            
             let hasFailed = false;
-            for (const item of remoteInventory) {
-              const req = store.put(item);
-              req.onsuccess = () => {
-                count++;
-                if (count === remoteInventory.length && !hasFailed) resolve();
-              };
-              req.onerror = () => {
+            const checkDone = () => {
+              pendingOps--;
+              if (pendingOps === 0 && !hasFailed) resolve();
+            };
+            
+            for (const id of toDelete) {
+              const delReq = store.delete(id);
+              delReq.onsuccess = checkDone;
+              delReq.onerror = () => {
                 hasFailed = true;
-                reject(req.error);
+                reject(delReq.error);
+              };
+            }
+            
+            for (const item of toPut) {
+              const putReq = store.put(item);
+              putReq.onsuccess = checkDone;
+              putReq.onerror = () => {
+                hasFailed = true;
+                reject(putReq.error);
               };
             }
           };
-          clearReq.onerror = () => reject(clearReq.error);
+          getAllReq.onerror = () => reject(getAllReq.error);
         });
       });
     }
 
     // 4. Clear and merge Inventory Logs
     if (result.inventoryLogs && Array.isArray(result.inventoryLogs)) {
-      const remoteInventoryLogs = result.inventoryLogs as InventoryLog[];
+      const remoteInventoryLogs = (result.inventoryLogs as InventoryLog[]).filter(log => !inventorySyncExclusions.has(log.id));
       await getStore('inventoryLogs', 'readwrite').then(({ store }) => {
         return new Promise<void>((resolve, reject) => {
           const clearReq = store.clear();
@@ -967,6 +1261,90 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
       });
     }
 
+    // 5. Smart diff merge Expenses (prevents overwriting pending local edits)
+    if (result.expenses && Array.isArray(result.expenses)) {
+      const rawExpenses = result.expenses as Expense[];
+      const remoteExpenseIds = new Set(rawExpenses.map(item => item.id));
+      for (const excludedId of Array.from(expenseSyncExclusions)) {
+        if (!remoteExpenseIds.has(excludedId)) {
+          expenseSyncExclusions.delete(excludedId);
+        }
+      }
+      const remoteExpenses = rawExpenses.filter(item => !expenseSyncExclusions.has(item.id));
+      await getStore('expenses', 'readwrite').then(({ store }) => {
+        return new Promise<void>((resolve, reject) => {
+          const getAllReq = store.getAll();
+          getAllReq.onsuccess = () => {
+            const localExpenses = (getAllReq.result || []) as Expense[];
+            
+            const remoteMap = new Map<string, Expense>();
+            for (const item of remoteExpenses) {
+              remoteMap.set(item.id, item);
+            }
+            
+            const now = Date.now();
+            const lockDuration = 20000; // 20 seconds cooldown lock
+            
+            const toDelete: string[] = [];
+            const toPut: Expense[] = [];
+            
+            for (const localItem of localExpenses) {
+              const lastEdit = localEditTimes.get(`expense_${localItem.id}`) || 0;
+              const isLocked = (now - lastEdit) < lockDuration;
+              
+              if (isLocked) {
+                remoteMap.delete(localItem.id);
+                continue;
+              }
+              
+              const remoteItem = remoteMap.get(localItem.id);
+              if (!remoteItem) {
+                toDelete.push(localItem.id);
+              } else {
+                toPut.push(remoteItem);
+                remoteMap.delete(localItem.id);
+              }
+            }
+            
+            for (const remoteItem of remoteMap.values()) {
+              toPut.push(remoteItem);
+            }
+            
+            let pendingOps = toDelete.length + toPut.length;
+            if (pendingOps === 0) {
+              resolve();
+              return;
+            }
+            
+            let hasFailed = false;
+            const checkDone = () => {
+              pendingOps--;
+              if (pendingOps === 0 && !hasFailed) resolve();
+            };
+            
+            for (const id of toDelete) {
+              const delReq = store.delete(id);
+              delReq.onsuccess = checkDone;
+              delReq.onerror = () => {
+                hasFailed = true;
+                reject(delReq.error);
+              };
+            }
+            
+            for (const item of toPut) {
+              const putReq = store.put(item);
+              putReq.onsuccess = checkDone;
+              putReq.onerror = () => {
+                hasFailed = true;
+                reject(putReq.error);
+              };
+            }
+          };
+          getAllReq.onerror = () => reject(getAllReq.error);
+        });
+      });
+    }
+
     return { success: true };
   } catch (err) {
     console.error('Failed to pull and merge from Google Sheets:', err);
@@ -975,7 +1353,7 @@ export const pullAndMergeFromGoogleSheets = async (): Promise<{ success: boolean
 };
 
 export const purgeAllData = async (): Promise<void> => {
-  const storesToClear = ['customers', 'bills', 'auditLogs', 'inventory', 'inventoryLogs'];
+  const storesToClear = ['customers', 'bills', 'auditLogs', 'inventory', 'inventoryLogs', 'expenses'];
   for (const storeName of storesToClear) {
     await new Promise<void>(async (resolveStore) => {
       try {

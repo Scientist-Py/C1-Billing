@@ -7,13 +7,14 @@ import {
   Activity, 
   Check, 
   FileDown, 
-  Share2
+  Share2,
+  Calculator
 } from 'lucide-react';
 import type { Customer, Bill, CafeSettings, PaymentMethod, PaymentDetails } from '../types';
-import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, getBills, calculateBasementCharge, getInventory, adjustStock } from '../utils/db';
+import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, calculateBasementCharge, getInventory, adjustStock } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
-import { generateAIWhatsAppMessage } from '../utils/ai';
-import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
+import { sendCheckoutInvoice } from '../utils/whatsappCloud';
+import { useToast } from '../context/toastContext';
 
 interface CheckoutModalProps {
   customer: Customer;
@@ -30,6 +31,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   settings,
   currentUser
 }) => {
+  const toast = useToast();
+  
   const preventMinus = (e: React.KeyboardEvent) => {
     if (e.key === '-' || e.key === 'e' || e.key === 'E') {
       e.preventDefault();
@@ -48,8 +51,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   });
 
   const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Pending'>('Paid');
+  const [cashReceived, setCashReceived] = useState<number | ''>('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [extraCharges, setExtraCharges] = useState<number>(0);
+  
+  // Custom total override state
+  const [customGrandTotal, setCustomGrandTotal] = useState<number>(0);
+  const [useCustomGrandTotal, setUseCustomGrandTotal] = useState<boolean>(false);
   
   // Success state after final checkout
   const [isSuccess, setIsSuccess] = useState(false);
@@ -97,6 +105,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const gstAmount = subtotalAfterDiscount * (settings.gstPercentage / 100);
   const grandTotal = subtotalAfterDiscount + gstAmount;
 
+  const finalGrandTotal = useCustomGrandTotal ? customGrandTotal : grandTotal;
+  const changeToReturn = cashReceived !== '' ? cashReceived - finalGrandTotal : 0;
+
   // Live timer update for exitTime until checked out successfully
   useEffect(() => {
     if (isSuccess) return;
@@ -117,21 +128,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Update Split fields if total changes
   useEffect(() => {
     if (paymentMethod === 'Split') {
-      const equalShare = parseFloat((grandTotal / 3).toFixed(2));
+      const equalShare = parseFloat((finalGrandTotal / 3).toFixed(2));
       setPaymentDetails({
         cashAmount: equalShare,
         upiAmount: equalShare,
-        cardAmount: parseFloat((grandTotal - equalShare * 2).toFixed(2))
+        cardAmount: parseFloat((finalGrandTotal - equalShare * 2).toFixed(2))
       });
     }
-  }, [paymentMethod, grandTotal]);
+  }, [paymentMethod, finalGrandTotal]);
 
   const handleCheckoutSubmit = async () => {
     // Validate split payments
     if (paymentMethod === 'Split') {
       const sum = (paymentDetails.cashAmount || 0) + (paymentDetails.upiAmount || 0) + (paymentDetails.cardAmount || 0);
-      if (Math.abs(sum - grandTotal) > 0.05) {
-        alert(`Split total (${settings.currency}${sum.toFixed(2)}) must equal Grand Total (${settings.currency}${grandTotal.toFixed(2)}). Current Difference: ${settings.currency}${Math.abs(sum - grandTotal).toFixed(2)}`);
+      if (Math.abs(sum - finalGrandTotal) > 0.05) {
+        alert(`Split total (${settings.currency}${sum.toFixed(2)}) must equal Grand Total (${settings.currency}${finalGrandTotal.toFixed(2)}). Current Difference: ${settings.currency}${Math.abs(sum - finalGrandTotal).toFixed(2)}`);
         return;
       }
     }
@@ -152,7 +163,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const finalDiscountAmount = finalRawSubtotal * (discountPercent / 100);
     const finalSubtotalAfterDiscount = finalRawSubtotal - finalDiscountAmount + extraCharges;
     const finalGstAmount = finalSubtotalAfterDiscount * (settings.gstPercentage / 100);
-    const finalGrandTotal = finalSubtotalAfterDiscount + finalGstAmount;
+    
+    const calculatedGrandTotal = finalSubtotalAfterDiscount + finalGstAmount;
+    const resolvedGrandTotal = useCustomGrandTotal ? customGrandTotal : calculatedGrandTotal;
 
     // Split details alignment with final recalculation
     let finalPaymentDetails = paymentMethod === 'Split' ? { ...paymentDetails } : undefined;
@@ -160,7 +173,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Small adjustment for Card share to match final recalculated total exactly
       const cashVal = finalPaymentDetails.cashAmount || 0;
       const upiVal = finalPaymentDetails.upiAmount || 0;
-      finalPaymentDetails.cardAmount = parseFloat((finalGrandTotal - cashVal - upiVal).toFixed(2));
+      finalPaymentDetails.cardAmount = parseFloat((resolvedGrandTotal - cashVal - upiVal).toFixed(2));
     }
 
     const finalizedBill: Bill = {
@@ -178,10 +191,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       foodTotal: foodSubtotal,
       basementCharges: finalSeatingCost,
       subtotal: finalRawSubtotal,
-      discount: finalDiscountAmount,
+      discount: useCustomGrandTotal ? Math.max(0, calculatedGrandTotal - customGrandTotal) : finalDiscountAmount,
       extraCharges,
       tax: finalGstAmount,
-      grandTotal: finalGrandTotal,
+      grandTotal: resolvedGrandTotal,
       paymentMethod,
       paymentDetails: finalPaymentDetails,
       status: paymentStatus,
@@ -260,6 +273,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setGeneratedBill(finalizedBill);
       setIsSuccess(true);
+      
+      // Dispatch background WhatsApp Cloud template delivery and CRM profile sync
+      try {
+        sendCheckoutInvoice(finalizedBill, settings);
+      } catch (waErr) {
+        console.warn('Failed to start background WhatsApp invoice task:', waErr);
+      }
     } catch (err) {
       alert('Failed to settle customer billing record.');
     }
@@ -274,42 +294,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     downloadReceiptPDF(billObj, settings, false);
   };
 
-  // WhatsApp formatted billing text share
+  // WhatsApp background billing delivery
   const shareWhatsAppBill = async (billObj: Bill) => {
     setIsAiLoading(true);
-    let visitCount = 1;
-    let aiIntro = '';
+    toast.info('Sending Invoice', 'Uploading and generating receipt template...');
     try {
-      const allBills = await getBills();
-      const customerPhoneClean = billObj.customerPhone.trim();
-      visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
-    } catch (err) {
-      console.warn('Failed to retrieve visit history:', err);
+      sendCheckoutInvoice(billObj, settings);
+      toast.success('Dispatched', `Invoice sent to customer ${billObj.customerName} in the background.`);
+    } catch (err: any) {
+      toast.error('Send Failed', err.message);
+    } finally {
+      setIsAiLoading(false);
     }
-
-    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
-      try {
-        aiIntro = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
-      } catch (err) {
-        console.warn('Groq AI greeting failed:', err);
-      }
-    }
-    setIsAiLoading(false);
-
-    const receiptMessage = buildWhatsAppMessage(billObj, visitCount, aiIntro);
-
-    navigator.clipboard.writeText(receiptMessage).then(() => {
-      const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');
-      const encodedMsg = encodeURIComponent(receiptMessage);
-      window.open(`https://api.whatsapp.com/send?phone=${phoneClean}&text=${encodedMsg}`, '_blank');
-    }).catch(() => {
-      alert('Could not copy billing receipt details to clipboard automatically.');
-    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm select-none">
-      <div className="bg-white rounded-3xl border border-apple-gray-100 shadow-apple-medium w-full max-w-lg overflow-hidden animate-fade-in">
+      <div className="bg-white rounded-3xl border border-apple-gray-100 shadow-apple-medium w-full max-w-4xl overflow-hidden animate-fade-in mx-4">
         
         {/* Modal Header */}
         <div className="px-6 py-4 bg-apple-gray-50 border-b border-apple-gray-100 flex justify-between items-center">
@@ -330,188 +331,339 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto max-h-[480px] no-scrollbar">
+        <div className="p-6 overflow-y-auto max-h-[85vh] no-scrollbar">
           {!isSuccess ? (
-            <div className="space-y-6">
-              {/* Seating recap banner */}
-              {customer.location === 'Basement' && (
-                <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Actual Duration</span>
-                      <span className="font-bold text-sm block text-indigo-900">{formatDuration(timeSpentMins)}</span>
-                      <span className="text-[10px] text-indigo-300 font-light mt-0.5">
-                        ({new Date(customer.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} → Now)
-                      </span>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left Column: Customer & Ordered Items (5 cols) */}
+              <div className="lg:col-span-5 space-y-4">
+                
+                {/* Seating Area & Customer Banner */}
+                <div className="p-4 bg-apple-gray-50 border border-apple-gray-100 rounded-2xl space-y-2">
+                  <span className="text-[8px] text-[#86868b] uppercase tracking-wider block font-bold">Customer Seating details</span>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#86868b]">Name:</span>
+                    <span className="font-bold text-apple-gray-850">{customer.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#86868b]">Location:</span>
+                    <span className="font-bold text-apple-gray-850">{customer.location}</span>
+                  </div>
+                  {customer.phone && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-[#86868b]">Phone:</span>
+                      <span className="font-mono font-bold text-apple-gray-850">{customer.phone}</span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Seating Charge</span>
-                      <span className="font-bold text-sm block text-indigo-900">{settings.currency}{seatingCost.toFixed(2)}</span>
+                  )}
+                </div>
+
+                {/* Seating timer recap banner */}
+                {customer.location === 'Basement' && (
+                  <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Actual Duration</span>
+                        <span className="font-bold text-sm block text-indigo-900">{formatDuration(timeSpentMins)}</span>
+                        <span className="text-[10px] text-indigo-300 font-light mt-0.5">
+                          ({new Date(customer.entryTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} → Now)
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8px] text-indigo-400 uppercase tracking-wider block font-bold">Seating Charge</span>
+                        <span className="font-bold text-sm block text-indigo-900">{settings.currency}{seatingCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    {/* Manual billable minutes adjustment */}
+                    <div className="flex items-center gap-3 pt-2 border-t border-indigo-100">
+                      <div className="flex-1">
+                        <label className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider block mb-1">Billable Minutes</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setBillableMinutes(prev => Math.max(0, prev - 5))}
+                            className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
+                          >−</button>
+                          <input
+                            type="number"
+                            min="0"
+                            max={timeSpentMins}
+                            value={billableMinutes}
+                            onChange={(e) => setBillableMinutes(Math.max(0, Math.min(timeSpentMins, parseInt(e.target.value, 10) || 0)))}
+                            className="apple-input w-20 font-mono text-center text-sm"
+                          />
+                          <button
+                            onClick={() => setBillableMinutes(prev => Math.min(timeSpentMins, prev + 5))}
+                            className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
+                          >+</button>
+                        </div>
+                      </div>
+                      {billableMinutes < timeSpentMins && (
+                        <div className="text-right">
+                          <span className="text-[9px] text-green-500 font-semibold block">Reduced by</span>
+                          <span className="text-xs font-bold text-green-600">{formatDuration(timeSpentMins - billableMinutes)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {/* Manual billable minutes adjustment */}
-                  <div className="flex items-center gap-3 pt-2 border-t border-indigo-100">
-                    <div className="flex-1">
-                      <label className="text-[9px] font-bold text-indigo-400 uppercase tracking-wider block mb-1">Billable Minutes</label>
-                      <div className="flex items-center gap-2">
+                )}
+
+                {/* Ordered Items Summary List */}
+                <div className="p-4 bg-apple-gray-50 border border-apple-gray-100 rounded-2xl flex flex-col max-h-[200px]">
+                  <h4 className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider border-b border-apple-gray-100 pb-1.5 mb-2 block">
+                    Ordered Items Summary
+                  </h4>
+                  <div className="space-y-2 overflow-y-auto pr-1 no-scrollbar flex-1">
+                    {customer.orderedItems.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-apple-gray-300 italic font-light">
+                        No food items ordered in this session.
+                      </div>
+                    ) : (
+                      customer.orderedItems.map((item) => (
+                        <div key={item.id} className="flex justify-between items-center text-xs py-1 border-b border-apple-gray-100/30 last:border-0">
+                          <div>
+                            <span className="font-semibold text-apple-gray-800">{item.name}</span>
+                            <span className="text-[9px] text-[#86868b] block mt-0.5">
+                              {item.quantity}x {settings.currency}{item.price.toFixed(2)}
+                            </span>
+                          </div>
+                          <span className="font-bold text-apple-gray-850 font-mono">
+                            {settings.currency}{(item.price * item.quantity).toFixed(2)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="border-t border-apple-gray-100 pt-2 mt-2 flex justify-between items-center text-xs">
+                    <span className="font-bold text-[#86868b]">Food Subtotal:</span>
+                    <span className="font-bold text-apple-gray-850 font-mono">{settings.currency}{foodSubtotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Settlement & Payments (7 cols) */}
+              <div className="lg:col-span-7 space-y-4 border-t lg:border-t-0 lg:border-l border-apple-gray-100 pt-4 lg:pt-0 lg:pl-6">
+                
+                {/* Adjustments row */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider">Discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={discountPercent || ''}
+                      onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+                      onKeyDown={preventMinus}
+                      className="apple-input w-full font-mono text-center"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider">Extra Charges ({settings.currency})</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={extraCharges || ''}
+                      onChange={(e) => setExtraCharges(Math.max(0, parseFloat(e.target.value) || 0))}
+                      onKeyDown={preventMinus}
+                      className="apple-input w-full font-mono text-center"
+                    />
+                  </div>
+                </div>
+
+                {/* Payment Methods - LARGE BUTTONS */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider block">Payment Method Selection</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {(['Cash', 'UPI', 'Card', 'Split'] as PaymentMethod[]).map((method) => {
+                      const Icon = method === 'Cash' ? Coins : method === 'UPI' ? Smartphone : method === 'Card' ? CreditCard : Activity;
+                      const colorClasses = method === 'Cash' 
+                        ? 'border-amber-100 hover:bg-amber-50/30 text-amber-600' 
+                        : method === 'UPI' 
+                        ? 'border-blue-100 hover:bg-blue-50/30 text-blue-600' 
+                        : method === 'Card' 
+                        ? 'border-purple-100 hover:bg-purple-50/30 text-purple-600' 
+                        : 'border-emerald-100 hover:bg-emerald-50/30 text-emerald-600';
+                      const activeClasses = method === 'Cash' 
+                        ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/10' 
+                        : method === 'UPI' 
+                        ? 'bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-500/10' 
+                        : method === 'Card' 
+                        ? 'bg-purple-500 border-purple-500 text-white shadow-md shadow-purple-500/10' 
+                        : 'bg-emerald-500 border-emerald-500 text-white shadow-md shadow-emerald-500/10';
+                      return (
                         <button
-                          onClick={() => setBillableMinutes(prev => Math.max(0, prev - 5))}
-                          className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
-                        >−</button>
+                          key={method}
+                          onClick={() => setPaymentMethod(method)}
+                          className={`py-6 rounded-2xl border flex flex-col items-center justify-center gap-2 text-sm font-bold transition-all duration-200 cursor-pointer ${
+                            paymentMethod === method ? activeClasses : `bg-white ${colorClasses}`
+                          }`}
+                        >
+                          <Icon className="w-6 h-6" />
+                          <span>{method}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Cash Calculator */}
+                {paymentMethod === 'Cash' && (
+                  <div className="p-4 bg-amber-50/40 border border-amber-100/50 rounded-2xl space-y-3 animate-fade-in">
+                    <div className="flex items-center gap-1.5 text-amber-800">
+                      <Calculator className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Cash Change Calculator</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold text-[#86868b] uppercase tracking-wider">Total Due</label>
+                        <div className="px-3 py-2 rounded-xl bg-white border border-apple-gray-100 font-mono font-bold text-sm text-apple-gray-800 text-center flex items-center justify-center h-10">
+                          {settings.currency}{finalGrandTotal.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold text-[#86868b] uppercase tracking-wider">Cash Received</label>
                         <input
                           type="number"
                           min="0"
-                          max={timeSpentMins}
-                          value={billableMinutes}
-                          onChange={(e) => setBillableMinutes(Math.max(0, Math.min(timeSpentMins, parseInt(e.target.value, 10) || 0)))}
-                          className="apple-input w-20 font-mono text-center text-sm"
+                          placeholder="Amount paid..."
+                          value={cashReceived || ''}
+                          onChange={(e) => setCashReceived(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="apple-input font-mono text-center text-sm font-bold w-full h-10"
                         />
-                        <button
-                          onClick={() => setBillableMinutes(prev => Math.min(timeSpentMins, prev + 5))}
-                          className="w-8 h-8 rounded-lg bg-white border border-indigo-200 text-indigo-600 font-bold text-sm hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
-                        >+</button>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-bold text-[#86868b] uppercase tracking-wider">Change to Return</label>
+                        <div className={`px-3 py-2 rounded-xl border font-mono font-bold text-sm text-center flex items-center justify-center h-10 ${
+                          changeToReturn >= 0 
+                            ? 'bg-green-50 border-green-150 text-green-600' 
+                            : 'bg-red-50 border-red-150 text-red-650'
+                        }`}>
+                          {settings.currency}{Math.max(0, changeToReturn).toFixed(2)}
+                        </div>
                       </div>
                     </div>
-                    {billableMinutes < timeSpentMins && (
-                      <div className="text-right">
-                        <span className="text-[9px] text-green-500 font-semibold block">Reduced by</span>
-                        <span className="text-xs font-bold text-green-600">{formatDuration(timeSpentMins - billableMinutes)}</span>
-                      </div>
-                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Adjustments row */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider">Discount (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={discountPercent || ''}
-                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)))}
-                    onKeyDown={preventMinus}
-                    className="apple-input w-full font-mono text-center"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider">Extra Charges ({settings.currency})</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={extraCharges || ''}
-                    onChange={(e) => setExtraCharges(Math.max(0, parseFloat(e.target.value) || 0))}
-                    onKeyDown={preventMinus}
-                    className="apple-input w-full font-mono text-center"
-                  />
-                </div>
-              </div>
+                {/* Split Details Input */}
+                {paymentMethod === 'Split' && (
+                  <div className="p-4 bg-apple-gray-50 border border-apple-gray-100 rounded-2xl space-y-3">
+                    <span className="text-[9px] font-bold text-[#86868b] uppercase tracking-wider block">Custom Payment Split</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-[#86868b] font-medium text-center">Cash</label>
+                        <input
+                          type="number"
+                          value={paymentDetails.cashAmount || ''}
+                          onChange={(e) => setPaymentDetails(p => ({ ...p, cashAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                          className="apple-input font-mono text-center text-xs py-1.5"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-[#86868b] font-medium text-center">UPI</label>
+                        <input
+                          type="number"
+                          value={paymentDetails.upiAmount || ''}
+                          onChange={(e) => setPaymentDetails(p => ({ ...p, upiAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                          className="apple-input font-mono text-center text-xs py-1.5"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-[#86868b] font-medium text-center">Card</label>
+                        <input
+                          type="number"
+                          value={paymentDetails.cardAmount || ''}
+                          onChange={(e) => setPaymentDetails(p => ({ ...p, cardAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                          className="apple-input font-mono text-center text-xs py-1.5"
+                        />
+                      </div>
+                    </div>
+                    <div className="text-center text-[10px] font-bold text-[#86868b] font-mono">
+                      Split Total: {settings.currency}
+                      {((paymentDetails.cashAmount || 0) + (paymentDetails.upiAmount || 0) + (paymentDetails.cardAmount || 0)).toFixed(2)} / {settings.currency}{finalGrandTotal.toFixed(2)}
+                    </div>
+                  </div>
+                )}
 
-              {/* Payment Methods */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider block">Payment Method Selection</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['Cash', 'UPI', 'Card', 'Split'] as PaymentMethod[]).map((method) => {
-                    const Icon = method === 'Cash' ? Coins : method === 'UPI' ? Smartphone : method === 'Card' ? CreditCard : Activity;
-                    return (
-                      <button
-                        key={method}
-                        onClick={() => setPaymentMethod(method)}
-                        className={`py-3 rounded-xl border flex flex-col items-center justify-center gap-1.5 text-xs font-semibold transition-apple cursor-pointer ${
-                          paymentMethod === method
-                            ? 'bg-apple-gray-800 border-apple-gray-800 text-white shadow-sm'
-                            : 'bg-white border-apple-gray-100 text-apple-gray-800 hover:bg-apple-gray-50'
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span>{method}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Split Details Input */}
-              {paymentMethod === 'Split' && (
+                {/* Grand Total Override */}
                 <div className="p-4 bg-apple-gray-50 border border-apple-gray-100 rounded-2xl space-y-3">
-                  <span className="text-[9px] font-bold text-[#86868b] uppercase tracking-wider block">Custom Payment Split</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] text-[#86868b] font-medium text-center">Cash</label>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#86868b] uppercase tracking-wider block">Custom Bill Override</span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-apple-gray-800">
                       <input
-                        type="number"
-                        value={paymentDetails.cashAmount || ''}
-                        onChange={(e) => setPaymentDetails(p => ({ ...p, cashAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                        className="apple-input font-mono text-center text-xs py-1.5"
+                        type="checkbox"
+                        checked={useCustomGrandTotal}
+                        onChange={(e) => {
+                          setUseCustomGrandTotal(e.target.checked);
+                          if (e.target.checked) {
+                            setCustomGrandTotal(parseFloat(grandTotal.toFixed(2)));
+                          }
+                        }}
+                        className="rounded border-apple-gray-100 text-apple-gray-800 focus:ring-apple-gray-800 w-4 h-4 cursor-pointer"
                       />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] text-[#86868b] font-medium text-center">UPI</label>
-                      <input
-                        type="number"
-                        value={paymentDetails.upiAmount || ''}
-                        onChange={(e) => setPaymentDetails(p => ({ ...p, upiAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                        className="apple-input font-mono text-center text-xs py-1.5"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] text-[#86868b] font-medium text-center">Card</label>
-                      <input
-                        type="number"
-                        value={paymentDetails.cardAmount || ''}
-                        onChange={(e) => setPaymentDetails(p => ({ ...p, cardAmount: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                        className="apple-input font-mono text-center text-xs py-1.5"
-                      />
-                    </div>
+                      <span>Enable Override</span>
+                    </label>
                   </div>
-                  <div className="text-center text-[10px] font-semibold text-apple-gray-300">
-                    Split Total: {settings.currency}
-                    {((paymentDetails.cashAmount || 0) + (paymentDetails.upiAmount || 0) + (paymentDetails.cardAmount || 0)).toFixed(2)} / {settings.currency}{grandTotal.toFixed(2)}
-                  </div>
-                </div>
-              )}
-
-              {/* Status & Totals */}
-              <div className="flex items-center justify-between border-t border-apple-gray-50 pt-4">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setPaymentStatus('Paid')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                      paymentStatus === 'Paid' ? 'bg-green-500 text-white shadow-sm' : 'bg-apple-gray-50 text-[#86868b]'
-                    }`}
-                  >
-                    Paid
-                  </button>
-                  <button
-                    onClick={() => setPaymentStatus('Pending')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                      paymentStatus === 'Pending' ? 'bg-orange-500 text-white shadow-sm' : 'bg-apple-gray-50 text-[#86868b]'
-                    }`}
-                  >
-                    Pending
-                  </button>
+                  {useCustomGrandTotal && (
+                    <div className="flex items-center gap-3 animate-fade-in">
+                      <span className="text-xs text-[#86868b] font-medium">Override Bill Total:</span>
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm text-[#86868b]">{settings.currency}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={customGrandTotal || ''}
+                          onChange={(e) => setCustomGrandTotal(Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="apple-input w-full pl-7 font-mono font-bold text-sm text-apple-gray-850"
+                          placeholder="Enter final paid amount"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="text-right">
-                  <span className="text-[8px] text-[#86868b] uppercase tracking-wider block font-bold">Total Bill Due</span>
-                  <span className="text-xl font-bold text-black">{settings.currency}{grandTotal.toFixed(2)}</span>
+                {/* Status & Totals */}
+                <div className="flex items-center justify-between border-t border-apple-gray-50 pt-4">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setPaymentStatus('Paid')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 ${
+                        paymentStatus === 'Paid' ? 'bg-green-500 text-white shadow-sm' : 'bg-apple-gray-50 text-[#86868b] border border-apple-gray-100 hover:bg-apple-gray-100/50'
+                      }`}
+                    >
+                      Paid
+                    </button>
+                    <button
+                      onClick={() => setPaymentStatus('Pending')}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 ${
+                        paymentStatus === 'Pending' ? 'bg-orange-500 text-white shadow-sm' : 'bg-apple-gray-50 text-[#86868b] border border-apple-gray-100 hover:bg-apple-gray-100/50'
+                      }`}
+                    >
+                      Pending
+                    </button>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[8px] text-[#86868b] uppercase tracking-wider block font-bold">Total Bill Due</span>
+                    <span className="text-2xl font-bold text-black font-mono">
+                      {settings.currency}{finalGrandTotal.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Action trigger */}
+                <button
+                  onClick={handleCheckoutSubmit}
+                  className="w-full apple-btn-primary py-3.5 text-center flex items-center justify-center gap-2 font-bold cursor-pointer text-sm"
+                >
+                  <Check className="w-5 h-5" />
+                  <span>Complete Checkout Settlement</span>
+                </button>
               </div>
-
-              {/* Action trigger */}
-              <button
-                onClick={handleCheckoutSubmit}
-                className="w-full apple-btn-primary py-3 text-center flex items-center justify-center gap-2"
-              >
-                <Check className="w-4 h-4" />
-                <span>Complete Checkout Settlement</span>
-              </button>
             </div>
           ) : (
             /* Success screen */
-            <div className="text-center py-6 space-y-6">
+            <div className="text-center py-6 space-y-6 max-w-lg mx-auto">
               <div className="w-14 h-14 rounded-full bg-green-50 border border-green-100 text-green-500 flex items-center justify-center mx-auto shadow-sm">
                 <Check className="w-8 h-8" />
               </div>
@@ -531,7 +683,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   {/* Download PDF button */}
                   <button
                     onClick={() => generatedBill && downloadPDFBill(generatedBill)}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-apple-gray-100 shadow-sm rounded-xl text-xs font-semibold text-apple-gray-800 hover:bg-apple-gray-100/50 cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-apple-gray-100 shadow-sm rounded-xl text-xs font-semibold text-apple-gray-800 hover:bg-apple-gray-100/50 cursor-pointer animate-fade-in"
                   >
                     <FileDown className="w-4 h-4" />
                     <span>Save PDF</span>
@@ -541,21 +693,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <button
                     onClick={() => generatedBill && shareWhatsAppBill(generatedBill)}
                     disabled={isAiLoading}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-green-500 disabled:bg-green-400 text-white shadow-sm rounded-xl text-xs font-semibold hover:bg-green-600 cursor-pointer disabled:cursor-not-allowed transition-all"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-green-500 disabled:bg-green-400 text-white shadow-sm rounded-xl text-xs font-semibold hover:bg-green-600 cursor-pointer disabled:cursor-not-allowed transition-all animate-fade-in"
                   >
                     <Share2 className="w-4 h-4" />
-                    <span>{isAiLoading ? "Writing AI copy..." : "WhatsApp"}</span>
+                    <span>{isAiLoading ? "Sending..." : "Share Bill"}</span>
                   </button>
                 </div>
                 
                 <p className="text-[9px] text-[#86868b] font-light leading-relaxed">
-                  Clicking *WhatsApp* copies the text receipt format and redirects to WhatsApp Web. Attach the PDF manually.
+                  Clicking *Share Bill* sends the invoice receipt and PDF to the customer's WhatsApp automatically in the background.
                 </p>
               </div>
 
               <button
                 onClick={handleDone}
-                className="apple-btn-secondary w-full py-2.5 max-w-sm"
+                className="apple-btn-secondary w-full py-2.5 max-w-sm mx-auto"
               >
                 Close and Exit
               </button>

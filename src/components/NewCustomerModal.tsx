@@ -25,7 +25,8 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   const [pastBills, setPastBills] = useState<Bill[]>([]);
   const [suggestions, setSuggestions] = useState<{ name: string; phone: string; visits: number }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [activeField, setActiveField] = useState<'name' | 'phone' | null>(null);
+  const suggestionsRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     getBills().then(setPastBills).catch(console.error);
@@ -71,10 +72,41 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
   const handlePhoneChange = (val: string) => {
     const cleaned = val.replace(/[^0-9]/g, '');
     setPhone(cleaned);
-    if (cleaned.trim().length >= 3) {
+    setActiveField('phone');
+    
+    // Autofill name if there is an exact 10-digit match for the phone number
+    const exactMatch = uniqueCustomers.find(c => c.phone.trim() === cleaned.trim());
+    if (exactMatch) {
+      setName(exactMatch.name);
+    }
+
+    if (cleaned.trim().length >= 2) {
       const query = cleaned.toLowerCase();
       const filtered = uniqueCustomers.filter(
         c => c.phone.includes(query) || c.name.toLowerCase().includes(query)
+      );
+      setSuggestions(filtered.slice(0, 5));
+      setShowSuggestions(true);
+    } else {
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    setActiveField('name');
+
+    // Autofill phone if there is an exact match for the name
+    const exactMatch = uniqueCustomers.find(c => c.name.toLowerCase().trim() === val.toLowerCase().trim());
+    if (exactMatch) {
+      setPhone(exactMatch.phone);
+    }
+
+    if (val.trim().length >= 2) {
+      const query = val.toLowerCase();
+      const filtered = uniqueCustomers.filter(
+        c => c.name.toLowerCase().includes(query) || c.phone.includes(query)
       );
       setSuggestions(filtered.slice(0, 5));
       setShowSuggestions(true);
@@ -112,8 +144,10 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
       const active = await getActiveCustomers();
       const duplicateActive = active.find(c => c.phone.trim() === phone.trim());
       if (duplicateActive) {
-        alert(`Customer with phone number "${phone}" is already checked in (Sitting in ${duplicateActive.location}). Please check them out before checking them in again.`);
-        return;
+        const proceed = window.confirm(`Customer with phone number "${phone}" is already checked in (Sitting in ${duplicateActive.location}). Do you want to check them in as another seating anyway?`);
+        if (!proceed) {
+          return;
+        }
       }
     } catch (err) {
       console.warn('Failed to verify check-in collisions', err);
@@ -181,9 +215,9 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs" ref={suggestionsRef}>
           {/* Customer Phone */}
-          <div className="flex flex-col gap-1.5 relative" ref={suggestionsRef}>
+          <div className="flex flex-col gap-1.5 relative">
             <label className="font-bold text-[#86868b]">Phone Number *</label>
             <input
               type="tel"
@@ -191,11 +225,12 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
               placeholder="e.g. 9876543210"
               value={phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
+              onFocus={() => { if (phone.trim().length >= 2) handlePhoneChange(phone); }}
               className="apple-input font-mono"
               autoComplete="off"
             />
-            {/* Suggestions list overlay */}
-            {showSuggestions && suggestions.length > 0 && (
+            {/* Suggestions list overlay for Phone */}
+            {showSuggestions && activeField === 'phone' && suggestions.length > 0 && (
               <div className="absolute top-[52px] left-0 right-0 bg-white border border-apple-gray-100 rounded-xl shadow-apple-medium overflow-hidden z-20 p-1">
                 {suggestions.map((s) => (
                   <button
@@ -218,16 +253,39 @@ export const NewCustomerModal: React.FC<NewCustomerModalProps> = ({
           </div>
 
           {/* Customer Name */}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 relative">
             <label className="font-bold text-[#86868b]">Customer Name *</label>
             <input
               type="text"
               required
               placeholder="e.g. John Doe"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
+              onFocus={() => { if (name.trim().length >= 2) handleNameChange(name); }}
               className="apple-input"
+              autoComplete="off"
             />
+            {/* Suggestions list overlay for Name */}
+            {showSuggestions && activeField === 'name' && suggestions.length > 0 && (
+              <div className="absolute top-[52px] left-0 right-0 bg-white border border-apple-gray-100 rounded-xl shadow-apple-medium overflow-hidden z-20 p-1">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.phone}
+                    type="button"
+                    onClick={() => handleSelectSuggestion(s)}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-apple-gray-50 flex justify-between items-center text-xs text-apple-gray-800 cursor-pointer transition-colors"
+                  >
+                    <div>
+                      <span className="font-semibold block">{s.name}</span>
+                      <span className="text-[10px] text-apple-gray-300 font-mono mt-0.5">{s.phone}</span>
+                    </div>
+                    <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                      {s.visits} visits
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Repeat Customer Status indicator */}

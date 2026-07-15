@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { SplashScreen } from './components/SplashScreen';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -13,10 +14,13 @@ import { Settings } from './components/Settings';
 import { NewCustomerModal } from './components/NewCustomerModal';
 import { AutoLockScreen } from './components/AutoLockScreen';
 import { Inventory } from './components/Inventory';
+import { Expenses } from './components/Expenses';
+import { CRM } from './components/CRM';
 import type { User, Customer, CafeSettings, Bill, OrderedItem } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets, purgeAllData } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
 import { ShieldAlert, Laptop } from 'lucide-react';
+import { useToast } from './context/toastContext';
 
 const checkIsWindows = (): boolean => {
   if (typeof window === 'undefined') return true;
@@ -104,11 +108,72 @@ const AccessDeniedScreen = () => {
 };
 
 function App() {
+  const toast = useToast();
+  const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<CafeSettings | null>(null);
+
+  // Initialize and update the background review request scheduler whenever settings change
+  useEffect(() => {
+    let active = true;
+    if (settings) {
+      import('./utils/scheduler').then(({ Scheduler }) => {
+        if (active) Scheduler.init(settings);
+      }).catch(err => {
+        console.error('Failed to start review scheduler:', err);
+      });
+    }
+    return () => {
+      active = false;
+      import('./utils/scheduler').then(({ Scheduler }) => {
+        Scheduler.stop();
+      }).catch(() => {});
+    };
+  }, [settings]);
+
+  // Listen for review templates sent in the background and show rating toast
+  useEffect(() => {
+    const handleReviewSent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ customerName: string }>;
+      const { customerName } = customEvent.detail;
+      toast.success('⭐⭐⭐⭐⭐', `Review request sent to ${customerName}`);
+    };
+    window.addEventListener('review-sent', handleReviewSent);
+    return () => window.removeEventListener('review-sent', handleReviewSent);
+  }, [toast]);
+
+  // Listen for review templates scheduled in the background and show scheduling toast
+  useEffect(() => {
+    const handleReviewScheduled = (e: Event) => {
+      const customEvent = e as CustomEvent<{ customerName: string; time: string }>;
+      const { customerName, time } = customEvent.detail;
+      const formattedTime = new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      toast.info('Review Scheduled', `Automatic review for ${customerName} scheduled for ${formattedTime}`);
+    };
+    window.addEventListener('review-scheduled', handleReviewScheduled);
+    return () => window.removeEventListener('review-scheduled', handleReviewScheduled);
+  }, [toast]);
+
+  // Listen for skipped review scheduling and show a warning toast
+  useEffect(() => {
+    const handleReviewScheduleSkipped = (e: Event) => {
+      const customEvent = e as CustomEvent<{ reason: string }>;
+      const { reason } = customEvent.detail;
+      toast.warning('Review Auto-Send Skipped', reason);
+    };
+    window.addEventListener('review-schedule-skipped', handleReviewScheduleSkipped);
+    return () => window.removeEventListener('review-schedule-skipped', handleReviewScheduleSkipped);
+  }, [toast]);
   
   // Navigation tabs
   const [currentTab, setTab] = useState<string>('dashboard');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
   
   // State lists
   const [activeCustomers, setActiveCustomers] = useState<Customer[]>([]);
@@ -242,14 +307,19 @@ function App() {
   useEffect(() => {
     if (selectedCustomerId) {
       const match = activeCustomers.find(c => c.id === selectedCustomerId);
-      setSelectedCustomer(match || null);
       if (!match) {
+        setSelectedCustomer(null);
         setSelectedCustomerId(null); // customer checked out
+      } else {
+        // Only update if the stringified content actually changed to prevent resetting local input states!
+        if (JSON.stringify(match) !== JSON.stringify(selectedCustomer)) {
+          setSelectedCustomer(match);
+        }
       }
     } else {
       setSelectedCustomer(null);
     }
-  }, [selectedCustomerId, activeCustomers]);
+  }, [selectedCustomerId, activeCustomers, selectedCustomer]);
 
   // Reload and filter active seating list whenever the logged-in user changes
   useEffect(() => {
@@ -262,8 +332,12 @@ function App() {
 
     // Run immediately on login
     const triggerSync = async () => {
+      // Pause sync if modals are active to prevent UI reloads while cashier is working/typing
+      if (isNewCustomerOpen || checkoutCustomer) {
+        return;
+      }
       try {
-        const syncResult = await pullAndMergeFromGoogleSheets();
+        const syncResult = await pullAndMergeFromGoogleSheets(selectedCustomerId);
         if (syncResult.success) {
           await reloadActiveCustomers();
           setLastSyncTime(Date.now());
@@ -279,7 +353,7 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [currentUser]);
+  }, [currentUser, selectedCustomerId, isNewCustomerOpen, checkoutCustomer]);
 
   const reloadActiveCustomers = async () => {
     try {
@@ -433,12 +507,8 @@ function App() {
     return <AccessDeniedScreen />;
   }
 
-  if (!settings) {
-    return (
-      <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center font-medium text-apple-gray-800 text-xs">
-        Initializing Chapter One POS database engine...
-      </div>
-    );
+  if (showSplash || !settings) {
+    return <SplashScreen />;
   }
 
   if (!currentUser) {
@@ -521,6 +591,9 @@ function App() {
                   settings={settings}
                 />
               )}
+              {currentTab === 'crm' && (
+                <CRM settings={settings} currentUser={currentUser} />
+              )}
               {currentTab === 'history' && (
                 <CustomerHistory
                   settings={settings}
@@ -533,6 +606,9 @@ function App() {
               )}
               {currentTab === 'inventory' && (
                 <Inventory currentUser={currentUser} settings={settings} />
+              )}
+              {currentTab === 'expenses' && (
+                <Expenses settings={settings} currentUser={currentUser} />
               )}
               {currentTab === 'reports' && (
                 <Reports settings={settings} />

@@ -13,11 +13,10 @@ import {
   History
 } from 'lucide-react';
 import type { Customer, MenuItem, CafeSettings, OrderedItem, Bill } from '../types';
-import { getMenu, saveCustomer, getBills, calculateBasementCharge } from '../utils/db';
+import { getMenu, saveCustomer, getBills, calculateBasementCharge, syncToGoogleSheets, saveAuditLog } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { BillDetailsModal } from './BillDetailsModal';
-import { generateAIWhatsAppMessage } from '../utils/ai';
-import { buildWhatsAppMessage } from '../utils/whatsappFormatter';
+import { useToast } from '../context/toastContext';
 
 
 interface CustomerDetailsProps {
@@ -37,6 +36,7 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
   settings,
   currentUser: _currentUser
 }) => {
+  const toast = useToast();
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [search, setSearch] = useState('');
   const [matchedItems, setMatchedItems] = useState<MenuItem[]>([]);
@@ -71,38 +71,68 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
     loadPastBills();
   }, [customer.phone]);
 
+  // Check-In Time Edit states for Admins
+  const [isEditingEntryTime, setIsEditingEntryTime] = useState(false);
+  const [editEntryTimeVal, setEditEntryTimeVal] = useState(customer.entryTime);
+
+  useEffect(() => {
+    setEditEntryTimeVal(customer.entryTime);
+    setIsEditingEntryTime(false);
+  }, [customer.id, customer.entryTime]);
+
+  const toLocalDateTimeString = (isoString: string): string => {
+    const d = new Date(isoString);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const handleSaveEntryTime = async (newVal: string) => {
+    try {
+      const isoTime = new Date(newVal).toISOString();
+      const updatedCustomer = {
+        ...customer,
+        entryTime: isoTime
+      };
+      await saveCustomer(updatedCustomer);
+      setIsEditingEntryTime(false);
+      if (onUpdate) {
+        onUpdate(updatedCustomer);
+      }
+      syncToGoogleSheets('CHECKIN', updatedCustomer);
+      
+      await saveAuditLog(
+        _currentUser.id,
+        _currentUser.username,
+        'EDIT_CUSTOMER_TIME',
+        `Adjusted check-in time for customer ${customer.name} (ID: ${customer.id}) to ${new Date(isoTime).toLocaleTimeString()}`
+      );
+      
+      alert('Check-in time updated and synced successfully!');
+    } catch (err) {
+      alert('Failed to update check-in time. Please check the entered date format.');
+    }
+  };
+
   const downloadOldPDF = (billObj: Bill) => {
     downloadReceiptPDF(billObj, settings, true);
   };
 
   const reShareWhatsApp = async (billObj: Bill) => {
     setIsAiSharing(true);
-    let visitCount = 1;
-    let aiIntro = '';
+    toast.info('Sending Invoice', 'Uploading and generating receipt template...');
     try {
-      const allBills = await getBills();
-      const customerPhoneClean = billObj.customerPhone.trim();
-      visitCount = allBills.filter(b => b.customerPhone.trim() === customerPhoneClean).length;
-    } catch (err) {
-      console.warn('Failed to retrieve visit history:', err);
+      const { sendCheckoutInvoice } = await import('../utils/whatsappCloud');
+      sendCheckoutInvoice(billObj, settings);
+      toast.success('Dispatched', `Invoice sent to customer ${billObj.customerName} in the background.`);
+    } catch (err: any) {
+      toast.error('Send Failed', err.message);
+    } finally {
+      setIsAiSharing(false);
     }
-
-    if (settings.groqApiKey && settings.groqApiKey.trim().length > 0) {
-      try {
-        aiIntro = await generateAIWhatsAppMessage(billObj, settings.groqApiKey, visitCount);
-      } catch (err) {
-        console.warn('Groq AI greeting failed:', err);
-      }
-    }
-    setIsAiSharing(false);
-
-    const receiptMessage = buildWhatsAppMessage(billObj, visitCount, aiIntro);
-
-    navigator.clipboard.writeText(receiptMessage).then(() => {
-      const phoneClean = billObj.customerPhone.replace(/[^0-9]/g, '');
-      const encodedMsg = encodeURIComponent(receiptMessage);
-      window.open(`https://api.whatsapp.com/send?phone=${phoneClean}&text=${encodedMsg}`, '_blank');
-    });
   };
   
   // Billing calculations local overrides
@@ -223,6 +253,12 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
   const addDirectItemToCart = async (menuItem: MenuItem, extraCheese: boolean) => {
     const isBurger = menuItem.name.toLowerCase().includes('burger');
     const isPizza = menuItem.name.toLowerCase().includes('pizza');
+
+    // Monday BOGO Promotion Alert Toast
+    const isMonday = new Date().getDay() === 1;
+    if (isMonday && isPizza && menuItem.name.toLowerCase().includes('large')) {
+      toast.info('Monday BOGO Active!', 'Buy 1 Large, Get 1 Medium Free! Remind the customer to add their free Medium Pizza.');
+    }
 
     let extraPrice = 0;
     let suffix = '';
@@ -430,11 +466,11 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
         {/* COLUMN 1: Seating timer, notes, and ordered items */}
         <div className="space-y-6">
           {/* Seating Timer Module */}
-          {(customer.location === 'Basement' || customer.notes) && (
+          {(!customer.id.startsWith('temp_') || customer.location === 'Basement' || customer.notes) && (
             <div className="apple-card">
               <h4 className="text-xs font-bold text-apple-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[#86868b]" />
-                <span>{customer.location !== 'Basement' ? 'Session Notes' : 'Seating Clock'}</span>
+                <span>{customer.location !== 'Basement' ? 'Seating Details' : 'Seating Clock'}</span>
               </h4>
               
               <div className="space-y-4">
@@ -456,6 +492,62 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
                 {customer.location === 'Basement' && (
                   <div className="p-3 bg-orange-50/50 border border-orange-100 rounded-xl text-[10px] text-orange-600 font-light leading-relaxed">
                     Basement rules: {settings.currency}{settings.basementHourlyRate} for the first hour, then {settings.currency}{(settings.basementHourlyRate / 60).toFixed(2)}/minute ({settings.currency}{settings.basementHourlyRate}/hr rate).
+                  </div>
+                )}
+
+                {/* Registered Check-In Time */}
+                {!customer.id.startsWith('temp_') && (
+                  <div className="p-3.5 bg-apple-gray-50 border border-apple-gray-100 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-[#86868b] block">Check-In Registered</span>
+                        {isEditingEntryTime ? (
+                          <input
+                            type="datetime-local"
+                            className="mt-1 text-xs border border-apple-gray-200 rounded px-1.5 py-0.5 bg-white font-mono text-apple-gray-800"
+                            value={toLocalDateTimeString(editEntryTimeVal)}
+                            onChange={(e) => setEditEntryTimeVal(new Date(e.target.value).toISOString())}
+                          />
+                        ) : (
+                          <span className="text-xs text-apple-gray-800 font-semibold font-mono block mt-0.5">
+                            {entryDayStr} at {entryTimeStr}
+                          </span>
+                        )}
+                      </div>
+                      {_currentUser.role === 'admin' && (
+                        <div className="flex gap-1.5 shrink-0">
+                          {isEditingEntryTime ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEntryTime(editEntryTimeVal)}
+                                className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsEditingEntryTime(false);
+                                  setEditEntryTimeVal(customer.entryTime);
+                                }}
+                                className="px-2 py-1 bg-apple-gray-200 hover:bg-apple-gray-300 text-apple-gray-800 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingEntryTime(true)}
+                              className="px-2 py-1 border border-apple-gray-200 hover:bg-apple-gray-50 text-apple-gray-800 rounded text-[10px] font-bold cursor-pointer transition-all shadow-sm"
+                            >
+                              Edit Time
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -747,6 +839,11 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
           onDownloadPDF={downloadOldPDF}
           onShareWhatsApp={reShareWhatsApp}
           isAiSharing={isAiSharing}
+          currentUser={_currentUser}
+          onBillUpdate={(updated) => {
+            setPastBills(prev => prev.map(b => b.id === updated.id ? updated : b));
+            setSelectedPastBill(updated);
+          }}
         />
       )}
 
@@ -762,6 +859,19 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
                 Select your preferred size:
               </p>
             </div>
+
+            {/* Monday BOGO Promotion Alert */}
+            {new Date().getDay() === 1 && (
+              <div className="p-3 bg-orange-50 border border-orange-100 rounded-2xl flex items-center gap-2 animate-pulse text-orange-850">
+                <span className="text-base shrink-0">🍕</span>
+                <div>
+                  <span className="text-xs font-bold block">Monday Offer Active!</span>
+                  <span className="text-[10px] font-medium block opacity-90">
+                    Buy 1 Large, Get 1 Medium FREE!
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Extra Cheese Toggle for Pizzas */}
             <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-center justify-between">
@@ -847,6 +957,19 @@ export const CustomerDetails: React.FC<CustomerDetailsProps> = ({
                 Select upgrades for your order:
               </p>
             </div>
+
+            {/* Monday BOGO Promotion Alert */}
+            {new Date().getDay() === 1 && selectedCustomizeItem.name.toLowerCase().includes('pizza') && selectedCustomizeItem.name.toLowerCase().includes('large') && (
+              <div className="p-3 bg-orange-50 border border-orange-100 rounded-2xl flex items-center gap-2 animate-pulse text-orange-850">
+                <span className="text-base shrink-0">🍕</span>
+                <div>
+                  <span className="text-xs font-bold block">Monday Offer Active!</span>
+                  <span className="text-[10px] font-medium block opacity-90">
+                    Buy 1 Large, Get 1 Medium FREE!
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Customization Options */}
             <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-2xl flex items-center justify-between">
