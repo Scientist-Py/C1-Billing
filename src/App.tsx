@@ -52,7 +52,7 @@ const MobileAccessGateScreen: React.FC<MobileAccessGateScreenProps> = ({ onUnloc
       localStorage.setItem('mobile_pos_access_unlocked', 'true');
       onUnlock();
     } else {
-      setErrorMsg('Invalid 24-character mobile access key.');
+      setErrorMsg('Invalid mobile access key.');
       setTimeout(() => setErrorMsg(''), 4000);
     }
   };
@@ -77,7 +77,7 @@ const MobileAccessGateScreen: React.FC<MobileAccessGateScreenProps> = ({ onUnloc
             Mobile Activation Gate
           </h2>
           <p className="text-[11px] text-[#86868b] leading-relaxed max-w-xs mx-auto">
-            This POS system is owned by Tushar Chauhan. To access this terminal on your Android/mobile browser, please enter your 24-character security key.
+            This POS system is owned by Tushar Chauhan. To access this terminal on your Android/mobile browser, please enter your mobile access key.
           </p>
         </div>
 
@@ -538,7 +538,7 @@ function App() {
     return (
       <MobileAccessGateScreen
         onUnlock={() => setIsMobileUnlocked(true)}
-        correctKey={settings?.mobileAccessKey || 'C1Pos@2026_SecureKey24Ch'}
+        correctKey={settings?.mobileAccessKey || '7770'}
       />
     );
   }

@@ -63,18 +63,10 @@ export const Settings: React.FC<SettingsProps> = ({
     e.preventDefault();
     if (!settings) return;
 
-    // Validate 24-character Mobile Access Key
+    // Validate Mobile Access Key
     const key = (settings.mobileAccessKey || '').trim();
-    if (key.length !== 24) {
-      alert('Mobile access key must be exactly 24 characters long.');
-      return;
-    }
-    const hasUpper = /[A-Z]/.test(key);
-    const hasLower = /[a-z]/.test(key);
-    const hasNumber = /[0-9]/.test(key);
-    const hasSpecial = /[^A-Za-z0-9]/.test(key);
-    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
-      alert('Mobile access key must contain at least one uppercase letter, one lowercase letter, one number, and one special character.');
+    if (!key) {
+      alert('Mobile access key cannot be empty.');
       return;
     }
 
@@ -408,20 +400,20 @@ export const Settings: React.FC<SettingsProps> = ({
 
           <div className="space-y-4 text-xs">
             <div className="flex flex-col gap-1.5">
-              <label className="font-bold text-[#86868b]">24-Character Mobile Access Key *</label>
+              <label className="font-bold text-[#86868b]">Mobile Device Access Key *</label>
               <input
                 type="text"
                 required
-                maxLength={24}
+                maxLength={50}
                 value={settings.mobileAccessKey || ''}
                 onChange={(e) => {
                   setSettings({ ...settings, mobileAccessKey: e.target.value });
                 }}
-                placeholder="24-character security key"
+                placeholder="e.g. 7770"
                 className="apple-input font-mono tracking-wider font-semibold"
               />
               <span className="text-[10px] text-[#86868b] leading-relaxed">
-                Required for mobile browser access. Must be exactly 24 characters, containing uppercase, lowercase, numbers, and special characters.
+                Required for accessing the POS terminal via mobile browsers. Bypass is active for PCs and Electron Desktop apps.
               </span>
             </div>
           </div>

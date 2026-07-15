@@ -233,13 +233,13 @@ export const seedDefaultData = async () => {
       reviewTemplateName: 'google_review_request',
       reviewSchedulerEnabled: true,
       reviewRetryEnabled: true,
-      mobileAccessKey: 'Ch1Pos@2026_SecureAccessKey!'
+      mobileAccessKey: '7770'
     };
     await saveSettings(defaultSettings);
   } else {
     let updated = false;
-    if (!settingsObj.mobileAccessKey) {
-      settingsObj.mobileAccessKey = 'Ch1Pos@2026_SecureAccessKey!';
+    if (!settingsObj.mobileAccessKey || settingsObj.mobileAccessKey === 'Ch1Pos@2026_SecureAccessKey!' || settingsObj.mobileAccessKey === 'C1Pos@2026_SecureKey24Ch') {
+      settingsObj.mobileAccessKey = '7770';
       updated = true;
     }
     if (!settingsObj.groqApiKey || settingsObj.groqApiKey.trim().length === 0) {
