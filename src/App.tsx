@@ -58,7 +58,7 @@ const MobileAccessGateScreen: React.FC<MobileAccessGateScreenProps> = ({ onUnloc
   };
 
   return (
-    <div className="fixed inset-0 bg-[#0d0d11] flex flex-col items-center justify-center p-6 text-white font-sans select-none z-50 overflow-hidden">
+    <div className="fixed inset-0 bg-[#0d0d11] flex flex-col items-center justify-center p-6 text-white font-sans z-50 overflow-hidden">
       {/* Premium ambient color blobs in background */}
       <div className="absolute top-1/10 left-1/10 w-[350px] h-[350px] bg-[#5c3d2e]/15 rounded-full blur-[100px] pointer-events-none animate-pulse animate-duration-[8000ms]" />
       <div className="absolute bottom-1/10 right-1/10 w-[350px] h-[350px] bg-amber-600/10 rounded-full blur-[100px] pointer-events-none animate-pulse animate-duration-[6000ms]" />
@@ -87,7 +87,7 @@ const MobileAccessGateScreen: React.FC<MobileAccessGateScreenProps> = ({ onUnloc
             <input
               type="password"
               placeholder="•••• •••• •••• •••• •••• ••••"
-              maxLength={24}
+              maxLength={100}
               value={inputKey}
               onChange={(e) => setInputKey(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-sm font-mono tracking-widest outline-none focus:border-amber-500/50 focus:bg-white/10 transition-all text-white placeholder-white/20"
@@ -538,7 +538,7 @@ function App() {
     return (
       <MobileAccessGateScreen
         onUnlock={() => setIsMobileUnlocked(true)}
-        correctKey={settings?.mobileAccessKey || 'Ch1Pos@2026_SecureAccessKey!'}
+        correctKey={settings?.mobileAccessKey || 'C1Pos@2026_SecureKey24Ch'}
       />
     );
   }
