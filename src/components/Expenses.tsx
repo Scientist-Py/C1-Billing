@@ -198,7 +198,7 @@ export const Expenses: React.FC<ExpensesProps> = ({ settings, currentUser }) => 
   const totalFilteredSum = filteredExpenses.reduce((sum, exp) => sum + exp.price, 0);
 
   return (
-    <div className="space-y-6 animate-fade-in select-none">
+    <div className="space-y-6 animate-fade-in">
       
       {/* Header section */}
       <div className="flex justify-between items-center">
@@ -422,7 +422,7 @@ export const Expenses: React.FC<ExpensesProps> = ({ settings, currentUser }) => 
 
       {/* Log Purchase Modal Form */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm select-none p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl border border-apple-gray-100 shadow-apple-medium w-full max-w-md overflow-hidden animate-fade-in">
             
             {/* Modal Header */}

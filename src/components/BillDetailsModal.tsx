@@ -160,7 +160,7 @@ export const BillDetailsModal: React.FC<BillDetailsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm select-none p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 animate-fade-in">
       <div 
         className="bg-white rounded-3xl border border-apple-gray-100 shadow-apple-medium w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}

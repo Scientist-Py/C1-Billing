@@ -91,7 +91,13 @@ export class SyncEngine {
       const tasks = await getSyncTasks();
       const sortedTasks = tasks
         .filter((t) => t.status === 'pending' || t.status === 'failed')
-        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        .sort((a, b) => {
+          const aNew = (a.retryCount || 0) === 0;
+          const bNew = (b.retryCount || 0) === 0;
+          if (aNew && !bNew) return -1;
+          if (!aNew && bNew) return 1;
+          return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        });
 
       for (const task of sortedTasks) {
         task.status = 'processing';
@@ -102,9 +108,13 @@ export class SyncEngine {
           // Success: remove task
           await deleteSyncTask(task.id);
         } catch (error: any) {
-          task.status = 'failed';
           task.retryCount += 1;
           task.lastError = error?.message || 'Unknown network error';
+          if (task.retryCount >= 5) {
+            task.status = 'blocked';
+          } else {
+            task.status = 'failed';
+          }
           await saveSyncTask(task);
           
           // Stop queue processing on first network failure (network is offline)
@@ -136,7 +146,7 @@ export class SyncEngine {
       return;
     }
 
-    // --- WhatsApp Cloud API send (retry path — uses stored minimal payload) ---
+    // --- WhatsApp Cloud API send (retry / campaign path) ---
     if (task.type === 'WHATSAPP_SEND') {
       const {
         customerPhone,
@@ -149,7 +159,13 @@ export class SyncEngine {
         waLang,
         crmScriptUrl,
         isScheduledPlaceholder,
-        isReviewRequest
+        isReviewRequest,
+        isCampaign,
+        campaignId,
+        campaignName,
+        offerImage,
+        offerText,
+        expiryDate
       } = task.payload;
 
       // Handle offline scheduled placeholder sync
@@ -188,55 +204,126 @@ export class SyncEngine {
       const { sendWhatsAppTemplate, syncToCRMSpreadsheet } = await import('./whatsappCloud');
       const isReview = waTemplate === 'google_review_request' || isReviewRequest;
 
-      // Retry only Step 2 + 3 — we cannot regenerate the PDF in a retry worker
-      // so we send the template without document attachment as a graceful degradation
-      const sendResult = await sendWhatsAppTemplate({
-        phoneNumberId: waPhoneId,
-        accessToken: waToken,
-        to: customerPhone,
-        templateName: waTemplate || 'invoice_receipt',
-        languageCode: waLang || 'en',
-        bodyParams: isReview ? [
-          { type: 'text', text: customerName }
-        ] : [
-          { type: 'text', text: customerName },
-          { type: 'text', text: billNumber },
-          { type: 'text', text: `₹${Number(grandTotal).toFixed(2)}` },
-        ],
-      });
+      let sendResult: { messageId: string };
+      try {
+        if (isCampaign) {
+          const isUrl = offerImage?.startsWith('http');
+          sendResult = await sendWhatsAppTemplate({
+            phoneNumberId: waPhoneId,
+            accessToken: waToken,
+            to: customerPhone,
+            templateName: waTemplate || 'coupon_offer',
+            languageCode: waLang || 'en',
+            mediaType: offerImage ? 'image' : undefined,
+            mediaId: offerImage && !isUrl ? offerImage : undefined,
+            mediaUrl: offerImage && isUrl ? offerImage : undefined,
+            bodyParams: [
+              { type: 'text', text: customerName },
+              { type: 'text', text: offerText || '' },
+              { type: 'text', text: expiryDate || '' }
+            ]
+          });
+        } else {
+          // Retry only Step 2 + 3 — we cannot regenerate the PDF in a retry worker
+          // so we send the template without document attachment as a graceful degradation
+          sendResult = await sendWhatsAppTemplate({
+            phoneNumberId: waPhoneId,
+            accessToken: waToken,
+            to: customerPhone,
+            templateName: waTemplate || 'invoice_receipt',
+            languageCode: waLang || 'en',
+            bodyParams: isReview ? [
+              { type: 'text', text: customerName }
+            ] : [
+              { type: 'text', text: customerName },
+              { type: 'text', text: billNumber },
+              { type: 'text', text: `₹${Number(grandTotal).toFixed(2)}` },
+            ],
+          });
+        }
 
-      // Log successful retry to CRM if URL is available
+        // If part of a campaign, update campaign recipient status to 'sent'
+        if (isCampaign && campaignId) {
+          const { getCampaigns, saveCampaign } = await import('./db');
+          const campaigns = await getCampaigns();
+          const campaign = campaigns.find(c => c.id === campaignId);
+          if (campaign) {
+            const recipient = campaign.recipients.find(r => r.phone === customerPhone);
+            if (recipient) {
+              recipient.deliveryStatus = 'sent';
+              recipient.messageId = sendResult.messageId;
+              recipient.timestamp = new Date().toISOString();
+            }
+            campaign.metrics.sent = campaign.recipients.filter(r => r.deliveryStatus === 'sent').length;
+            campaign.metrics.queued = campaign.recipients.filter(r => r.deliveryStatus === 'queued').length;
+            campaign.metrics.sending = campaign.recipients.filter(r => r.deliveryStatus === 'sending').length;
+            await saveCampaign(campaign);
+            window.dispatchEvent(new CustomEvent('campaign-progress', { detail: { campaignId } }));
+          }
+        }
+      } catch (err: any) {
+        if (isCampaign && campaignId) {
+          const { getCampaigns, saveCampaign } = await import('./db');
+          const campaigns = await getCampaigns();
+          const campaign = campaigns.find(c => c.id === campaignId);
+          if (campaign) {
+            const recipient = campaign.recipients.find(r => r.phone === customerPhone);
+            if (recipient) {
+              recipient.deliveryStatus = 'failed';
+              recipient.failureReason = err.message || 'Meta API error';
+              recipient.timestamp = new Date().toISOString();
+            }
+            campaign.metrics.failed = campaign.recipients.filter(r => r.deliveryStatus === 'failed').length;
+            campaign.metrics.queued = campaign.recipients.filter(r => r.deliveryStatus === 'queued').length;
+            campaign.metrics.sending = campaign.recipients.filter(r => r.deliveryStatus === 'sending').length;
+            await saveCampaign(campaign);
+            window.dispatchEvent(new CustomEvent('campaign-progress', { detail: { campaignId } }));
+          }
+          // Do not rethrow so task is marked complete (erased from syncTasks queue)
+          return;
+        }
+        throw err;
+      }
+
+      // Log to CRM if URL is available
       if (crmScriptUrl) {
+        let cleanPhone = customerPhone.replace(/\D/g, '');
+        if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
         try {
           await syncToCRMSpreadsheet('ADD_TIMELINE_EVENT', {
             event: {
               id: `wa_retry_${sendResult.messageId}`,
-              phone: customerPhone,
+              phone: cleanPhone,
               timestamp: new Date().toISOString(),
-              eventType: isReview ? 'Review Sent' : 'Invoice Sent',
-              description: isReview
-                ? `WhatsApp review template sent on retry (queued offline). message_id: ${sendResult.messageId}`
-                : `WhatsApp template sent on retry (no PDF — queued offline). message_id: ${sendResult.messageId}`,
+              eventType: isCampaign ? 'Campaign Sent' : (isReview ? 'Review Sent' : 'Invoice Sent'),
+              description: isCampaign
+                ? `WhatsApp campaign template "${waTemplate || 'coupon_offer'}" sent to ${customerName}. message_id: ${sendResult.messageId}`
+                : (isReview
+                    ? `WhatsApp review template sent on retry (queued offline). message_id: ${sendResult.messageId}`
+                    : `WhatsApp template sent on retry (no PDF — queued offline). message_id: ${sendResult.messageId}`),
             },
           }, crmScriptUrl);
-        } catch (_) { /* CRM log failure is non-fatal for the retry */ }
+        } catch (_) {}
 
         try {
           await syncToCRMSpreadsheet('ADD_WHATSAPP_MESSAGE', {
             message: {
-              conversationId: customerPhone,
-              customerId: `crm_${customerPhone.replace(/\D/g, '')}`,
+              conversationId: cleanPhone,
+              customerId: `crm_${cleanPhone}`,
               customerName: customerName,
-              phone: customerPhone,
+              phone: cleanPhone,
               direction: 'outgoing',
               messageType: 'template',
-              templateName: waTemplate || 'invoice_receipt',
-              messageText: isReview
-                ? `Hi ${customerName}, please share your review about your visit!`
-                : `Your invoice for Order #${billNumber} is attached. Total Amount: ₹${Number(grandTotal).toFixed(2)}`,
-              mediaType: '',
-              mediaUrl: '',
-              billNumber: billNumber,
+              templateName: waTemplate || (isCampaign ? 'coupon_offer' : 'invoice_receipt'),
+              messageText: isCampaign
+                ? `🎁 Campaign [${campaignName || 'Coupon Offer'}]: ${offerText} (Valid until ${expiryDate})`
+                : (isReview
+                    ? `Hi ${customerName}, please share your review about your visit!`
+                    : `Your invoice for Order #${billNumber} is attached. Total Amount: ₹${Number(grandTotal).toFixed(2)}`),
+              mediaType: (isCampaign && offerImage) ? 'image' : '',
+              mediaUrl: (isCampaign && offerImage) ? offerImage : '',
+              billNumber: billNumber || '',
               whatsappMessageId: sendResult.messageId,
               deliveryStatus: 'sent',
               timestamp: new Date().toISOString(),

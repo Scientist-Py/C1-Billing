@@ -42,15 +42,3 @@ createRoot(document.getElementById('root')!).render(
     </ToastProvider>
   </StrictMode>,
 )
-
-// Register Progressive Web App (PWA) service worker on production builds
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then((reg) => {
-      console.log('Service worker registered successfully:', reg.scope);
-    }).catch((err) => {
-      console.warn('Service worker registration failed:', err);
-    });
-  });
-}
-

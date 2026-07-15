@@ -19,87 +19,98 @@ import { CRM } from './components/CRM';
 import type { User, Customer, CafeSettings, Bill, OrderedItem } from './types';
 import { initDB, seedDefaultData, getSettings, getActiveCustomers, saveAuditLog, syncToGoogleSheets, pullAndMergeFromGoogleSheets, purgeAllData } from './utils/db';
 import { playEntrySound, playPaymentSound } from './utils/audio';
-import { ShieldAlert, Laptop } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { useToast } from './context/toastContext';
+import { SyncEngine } from './utils/syncEngine';
 
-const checkIsWindows = (): boolean => {
-  if (typeof window === 'undefined') return true;
-  const userAgent = window.navigator.userAgent;
-  const platform = (window.navigator as any).platform || '';
-  return userAgent.includes('Windows') || platform.includes('Win');
+const checkIsMobile = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(window.navigator.userAgent);
 };
 
-const IS_WINDOWS_DEVICE = checkIsWindows();
+const checkIsElectron = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return window.navigator.userAgent.includes('Electron');
+};
 
-const AccessDeniedScreen = () => {
-  const [selectedMessage, setSelectedMessage] = useState('');
+const IS_MOBILE_DEVICE = checkIsMobile();
+const IS_ELECTRON = checkIsElectron();
 
-  const getDeviceName = () => {
-    if (typeof window === 'undefined') return 'unknown device';
-    const ua = window.navigator.userAgent;
-    if (/iPhone/i.test(ua)) return 'iPhone';
-    if (/iPad/i.test(ua)) return 'iPad';
-    if (/Android/i.test(ua)) return 'Android device';
-    if (/Macintosh/i.test(ua)) return 'MacBook/Mac PC';
-    if (/Linux/i.test(ua)) return 'Linux machine';
-    return 'unauthorized device';
+interface MobileAccessGateScreenProps {
+  onUnlock: () => void;
+  correctKey: string;
+}
+
+const MobileAccessGateScreen: React.FC<MobileAccessGateScreenProps> = ({ onUnlock, correctKey }) => {
+  const [inputKey, setInputKey] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanInput = inputKey.trim();
+    if (cleanInput === correctKey) {
+      localStorage.setItem('mobile_pos_access_unlocked', 'true');
+      onUnlock();
+    } else {
+      setErrorMsg('Invalid 24-character mobile access key.');
+      setTimeout(() => setErrorMsg(''), 4000);
+    }
   };
-
-  useEffect(() => {
-    const deviceName = getDeviceName();
-    const messages = [
-      `Access restricted. This billing terminal is owned by Tushar Chauhan and permission is denied. If you are the right user, please ask Mr. Chauhan for access.`,
-      `Unauthorized connection. This POS system is owned by Tushar Chauhan. To run on this ${deviceName}, please contact Mr. Chauhan to request access clearance.`,
-      `Access denied. This billing portal is owned by Tushar Chauhan. If you are the authorized operator, ask Mr. Chauhan for system permissions.`,
-      `Connection blocked. This terminal network is owned by Tushar Chauhan. Please consult Mr. Chauhan for authorization to access this POS console.`,
-      `Device not allowed. This secure database console is owned by Tushar Chauhan. Access is restricted to Windows POS systems. Ask Mr. Chauhan for permissions.`
-    ];
-    
-    const randomIndex = Math.floor(Math.random() * messages.length);
-    const chosenText = messages[randomIndex];
-    setSelectedMessage(chosenText);
-  }, []);
 
   return (
     <div className="fixed inset-0 bg-[#0d0d11] flex flex-col items-center justify-center p-6 text-white font-sans select-none z-50 overflow-hidden">
       {/* Premium ambient color blobs in background */}
-      <div className="absolute top-1/10 left-1/10 w-[450px] h-[450px] bg-[#5c3d2e]/15 rounded-full blur-[130px] pointer-events-none animate-pulse animate-duration-[8000ms]" />
-      <div className="absolute bottom-1/10 right-1/10 w-[450px] h-[450px] bg-amber-600/10 rounded-full blur-[130px] pointer-events-none animate-pulse animate-duration-[6000ms]" />
+      <div className="absolute top-1/10 left-1/10 w-[350px] h-[350px] bg-[#5c3d2e]/15 rounded-full blur-[100px] pointer-events-none animate-pulse animate-duration-[8000ms]" />
+      <div className="absolute bottom-1/10 right-1/10 w-[350px] h-[350px] bg-amber-600/10 rounded-full blur-[100px] pointer-events-none animate-pulse animate-duration-[6000ms]" />
 
       {/* Glassmorphic Container Panel */}
-      <div className="w-full max-w-md p-8 border border-white/10 bg-white/5 backdrop-blur-3xl rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.4)] relative z-10 space-y-6 flex flex-col items-center">
+      <div className="w-full max-w-sm p-8 border border-white/10 bg-white/5 backdrop-blur-3xl rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.4)] relative z-10 space-y-6 flex flex-col items-center">
         
         {/* Soft Glowing Circle with Lock Icon */}
-        <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center text-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.2)] animate-pulse">
-          <ShieldAlert className="w-10 h-10" />
+        <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-full flex items-center justify-center text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-pulse">
+          <Lock className="w-8 h-8" />
         </div>
 
         {/* Dynamic header titles */}
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
-            System Locked
+          <h2 className="text-xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
+            Mobile Activation Gate
           </h2>
-          <p className="text-xs text-[#86868b] leading-relaxed max-w-xs mx-auto">
-            This POS console is restricted to authorized Windows terminal workstations.
+          <p className="text-[11px] text-[#86868b] leading-relaxed max-w-xs mx-auto">
+            This POS system is owned by Tushar Chauhan. To access this terminal on your Android/mobile browser, please enter your 24-character security key.
           </p>
         </div>
 
-        {/* Glass Box displaying the dynamically picked message */}
-        <div className="w-full p-5 bg-white/5 rounded-2xl border border-white/10 text-xs text-[#d2d2d7] leading-relaxed text-center font-normal shadow-inner relative">
-          <span className="text-[#f5f5f7] font-medium block mb-2 text-[10px] tracking-wider uppercase opacity-40">
-            Security Notice
-          </span>
-          "{selectedMessage}"
-        </div>
+        {/* Access Key Input Form */}
+        <form onSubmit={handleSubmit} className="w-full space-y-4">
+          <div className="space-y-1">
+            <input
+              type="password"
+              placeholder="•••• •••• •••• •••• •••• ••••"
+              maxLength={24}
+              value={inputKey}
+              onChange={(e) => setInputKey(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-sm font-mono tracking-widest outline-none focus:border-amber-500/50 focus:bg-white/10 transition-all text-white placeholder-white/20"
+            />
+          </div>
 
-        {/* Detailed diagnostic badge */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 bg-white/5 border border-white/10 rounded-full text-[10px] text-[#86868b]">
-          <Laptop className="w-3.5 h-3.5 text-[#86868b]" />
-          <span>Restricted Platform: <strong className="text-amber-400 font-semibold">{getDeviceName()}</strong></span>
-        </div>
+          {errorMsg && (
+            <p className="text-[10px] text-red-400 text-center font-medium animate-bounce">
+              ⚠️ {errorMsg}
+            </p>
+          )}
 
-        <div className="text-[10px] text-[#86868b] leading-relaxed font-light mt-1 text-center">
-          Please contact Tushar Chauhan for POS access keys.
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl py-3 text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer"
+          >
+            Unlock Console Access
+          </button>
+        </form>
+
+        <div className="text-[9px] text-[#86868b] text-center font-light leading-relaxed">
+          Access keys are managed by Tushar Chauhan.<br />
+          PCs and Electron Desktop apps bypass this gate.
         </div>
 
       </div>
@@ -112,6 +123,7 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<CafeSettings | null>(null);
+  const [isMobileUnlocked, setIsMobileUnlocked] = useState(() => localStorage.getItem('mobile_pos_access_unlocked') === 'true');
 
   // Initialize and update the background review request scheduler whenever settings change
   useEffect(() => {
@@ -326,16 +338,33 @@ function App() {
     reloadActiveCustomers();
   }, [currentUser]);
 
+  // Background Sync Engine queue runner
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    // Process queue immediately on login/start
+    SyncEngine.processQueue().catch(console.warn);
+
+    const intervalId = window.setInterval(() => {
+      SyncEngine.processQueue().catch(console.warn);
+    }, 30000); // Process queue every 30 seconds
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser]);
+
   // Background live synchronization with Google Sheets
   useEffect(() => {
     if (!currentUser) return;
+    if (currentTab !== 'seating') return; // Only run active seating sync on seating tab
 
-    // Run immediately on login
+    // Pause sync if modals are active or a customer cart is selected to prevent focus stealing/UI refresh
+    if (isNewCustomerOpen || checkoutCustomer || selectedCustomerId) {
+      return;
+    }
+
     const triggerSync = async () => {
-      // Pause sync if modals are active to prevent UI reloads while cashier is working/typing
-      if (isNewCustomerOpen || checkoutCustomer) {
-        return;
-      }
       try {
         const syncResult = await pullAndMergeFromGoogleSheets(selectedCustomerId);
         if (syncResult.success) {
@@ -346,6 +375,8 @@ function App() {
         console.warn('Background sync error:', err);
       }
     };
+    
+    // Run immediately
     triggerSync();
 
     const intervalId = window.setInterval(triggerSync, 15000); // 15 seconds polling
@@ -353,7 +384,7 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [currentUser, selectedCustomerId, isNewCustomerOpen, checkoutCustomer]);
+  }, [currentUser, selectedCustomerId, isNewCustomerOpen, checkoutCustomer, currentTab]);
 
   const reloadActiveCustomers = async () => {
     try {
@@ -503,8 +534,13 @@ function App() {
     }
   };
 
-  if (!IS_WINDOWS_DEVICE) {
-    return <AccessDeniedScreen />;
+  if (IS_MOBILE_DEVICE && !IS_ELECTRON && !isMobileUnlocked) {
+    return (
+      <MobileAccessGateScreen
+        onUnlock={() => setIsMobileUnlocked(true)}
+        correctKey={settings?.mobileAccessKey || 'Ch1Pos@2026_SecureAccessKey!'}
+      />
+    );
   }
 
   if (showSplash || !settings) {
@@ -592,7 +628,7 @@ function App() {
                 />
               )}
               {currentTab === 'crm' && (
-                <CRM settings={settings} currentUser={currentUser} />
+                <CRM settings={settings} currentUser={currentUser} onSettingsUpdate={setSettings} />
               )}
               {currentTab === 'history' && (
                 <CustomerHistory

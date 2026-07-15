@@ -13,7 +13,8 @@ import {
   WifiOff,
   Send,
   ShieldCheck,
-  Clipboard
+  Clipboard,
+  Lock
 } from 'lucide-react';
 import type { CafeSettings, AuditLog, User } from '../types';
 import { 
@@ -61,6 +62,21 @@ export const Settings: React.FC<SettingsProps> = ({
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!settings) return;
+
+    // Validate 24-character Mobile Access Key
+    const key = (settings.mobileAccessKey || '').trim();
+    if (key.length !== 24) {
+      alert('Mobile access key must be exactly 24 characters long.');
+      return;
+    }
+    const hasUpper = /[A-Z]/.test(key);
+    const hasLower = /[a-z]/.test(key);
+    const hasNumber = /[0-9]/.test(key);
+    const hasSpecial = /[^A-Za-z0-9]/.test(key);
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      alert('Mobile access key must contain at least one uppercase letter, one lowercase letter, one number, and one special character.');
+      return;
+    }
 
     try {
       await saveSettings(settings);
@@ -256,7 +272,7 @@ export const Settings: React.FC<SettingsProps> = ({
   if (!settings) return null;
 
   return (
-    <div className="space-y-6 select-none animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       {/* Save Success overlay indicator */}
       {successMsg && (
         <div className="fixed top-24 right-8 bg-apple-gray-800 text-white text-xs font-semibold py-3 px-5 rounded-2xl shadow-apple-medium flex items-center gap-2.5 z-50 animate-bounce">
@@ -382,6 +398,34 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
             </div>
           </div>
+
+        {/* Mobile Web Security Gate */}
+        <div className="apple-card space-y-5">
+          <h4 className="text-xs font-bold text-apple-gray-300 uppercase tracking-wider flex items-center gap-2">
+            <Lock className="w-4 h-4 text-amber-500" />
+            <span>Mobile Web Security Gate</span>
+          </h4>
+
+          <div className="space-y-4 text-xs">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-bold text-[#86868b]">24-Character Mobile Access Key *</label>
+              <input
+                type="text"
+                required
+                maxLength={24}
+                value={settings.mobileAccessKey || ''}
+                onChange={(e) => {
+                  setSettings({ ...settings, mobileAccessKey: e.target.value });
+                }}
+                placeholder="24-character security key"
+                className="apple-input font-mono tracking-wider font-semibold"
+              />
+              <span className="text-[10px] text-[#86868b] leading-relaxed">
+                Required for mobile browser access. Must be exactly 24 characters, containing uppercase, lowercase, numbers, and special characters.
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* WhatsApp Cloud API & CRM Section */}
         <div className="apple-card space-y-5">

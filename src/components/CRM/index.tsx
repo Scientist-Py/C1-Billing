@@ -15,15 +15,17 @@ import {
   Smile,
   FileDown,
   X,
-  Clock
+  Clock,
+  Terminal as TerminalIcon
 } from 'lucide-react';
 import type { Bill, CafeSettings, CRMProfile } from '../../types';
-import { getBills } from '../../utils/db';
 import { getLoyaltyTier } from '../../utils/loyalty';
 import { useToast } from '../../context/toastContext';
 import { PDFPreviewModal } from '../PDFPreviewModal';
 import { CRMDashboard } from './CRMDashboard';
+import { CampaignsTab } from './Campaigns';
 import { queryGroqAI } from '../../utils/ai';
+import { getBills, saveSettings } from '../../utils/db';
 import type { WhatsAppMessage } from '../../utils/whatsappCloud';
 import { 
   uploadMediaToMeta, 
@@ -34,6 +36,7 @@ import {
 interface CRMProps {
   settings: CafeSettings;
   currentUser: { id: string; username: string; role: string };
+  onSettingsUpdate: (settings: CafeSettings) => void;
 }
 
 const normalizePhone = (phone: string | number | undefined | null): string => {
@@ -45,14 +48,14 @@ const normalizePhone = (phone: string | number | undefined | null): string => {
   return clean;
 };
 
-export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
+export const CRM: React.FC<CRMProps> = ({ settings, currentUser, onSettingsUpdate }) => {
   const toast = useToast();
   const [bills, setBills] = useState<Bill[]>([]);
   const [profiles, setProfiles] = useState<CRMProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<CRMProfile | null>(null);
   
-  // Tabs: 'dashboard' | 'inbox' | 'overview' | 'timeline' | 'invoices' | 'whatsapp' | 'notes' | 'analytics'
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'overview' | 'timeline' | 'invoices' | 'whatsapp' | 'notes' | 'analytics'>('dashboard');
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbox' | 'overview' | 'timeline' | 'invoices' | 'whatsapp' | 'notes' | 'analytics' | 'campaigns' | 'settings'>('dashboard');
   
   const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,6 +85,7 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [mediaCache, setMediaCache] = useState<Record<string, string>>({});
   const [isPollLoading, setIsPollLoading] = useState(false);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,13 +183,70 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
     fetchWhatsAppMessages(true);
 
     const interval = setInterval(() => {
-      if (activeTab === 'inbox') {
+      if (activeTab === 'inbox' || activeTab === 'campaigns') {
         fetchWhatsAppMessages(false);
       }
     }, 15000);
 
     return () => clearInterval(interval);
   }, [activeTab]);
+
+  // Sync Meta Webhook status updates from sheet messages to IndexedDB Campaigns
+  useEffect(() => {
+    if (!allInboxMessages || allInboxMessages.length === 0) return;
+
+    const syncCampaignStatuses = async () => {
+      const { getCampaigns, saveCampaign } = await import('../../utils/db');
+      const campaigns = await getCampaigns();
+      let changedAny = false;
+
+      for (const campaign of campaigns) {
+        if (campaign.status === 'draft') continue;
+
+        let changedCampaign = false;
+        campaign.recipients.forEach(recipient => {
+          if (!recipient.messageId) return;
+
+          const matchingMsg = allInboxMessages.find(m => m.whatsappMessageId === recipient.messageId);
+          if (matchingMsg && matchingMsg.deliveryStatus && matchingMsg.deliveryStatus !== recipient.deliveryStatus) {
+            recipient.deliveryStatus = matchingMsg.deliveryStatus as any;
+            if (matchingMsg.deliveryStatus === 'failed') {
+              recipient.failureReason = 'Delivery failed on Meta webhook update';
+            }
+            changedCampaign = true;
+            changedAny = true;
+          }
+        });
+
+        if (changedCampaign) {
+          campaign.metrics.queued = campaign.recipients.filter(r => r.deliveryStatus === 'queued').length;
+          campaign.metrics.sending = campaign.recipients.filter(r => r.deliveryStatus === 'sending').length;
+          campaign.metrics.sent = campaign.recipients.filter(r => r.deliveryStatus === 'sent').length;
+          campaign.metrics.delivered = campaign.recipients.filter(r => r.deliveryStatus === 'delivered').length;
+          campaign.metrics.read = campaign.recipients.filter(r => r.deliveryStatus === 'read').length;
+          campaign.metrics.failed = campaign.recipients.filter(r => r.deliveryStatus === 'failed').length;
+          campaign.metrics.blocked = campaign.recipients.filter(r => r.deliveryStatus === 'blocked').length;
+
+          const activeCount = campaign.metrics.queued + campaign.metrics.sending;
+          if (activeCount === 0 && campaign.status === 'sending') {
+            campaign.status = 'completed';
+            campaign.endTime = new Date().toISOString();
+            if (campaign.startTime) {
+              campaign.duration = Math.floor((new Date(campaign.endTime).getTime() - new Date(campaign.startTime).getTime()) / 1000);
+            }
+          }
+
+          await saveCampaign(campaign);
+        }
+      }
+
+      if (changedAny) {
+        window.dispatchEvent(new CustomEvent('campaign-progress', { detail: {} }));
+      }
+    };
+
+    syncCampaignStatuses().catch(err => console.error('[CRM] Failed to sync campaign statuses:', err));
+  }, [allInboxMessages]);
 
   // Auto-set WhatsApp conversation phone when Catalog -> WhatsApp tab is active
   useEffect(() => {
@@ -849,7 +910,7 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
                     </div>
                   )}
 
-                  {(isTemplate && msg.billNumber) ? (
+                  {(isTemplate && msg.billNumber && !isReview) ? (
                     <div className="bg-white border border-apple-gray-100 rounded-xl p-3.5 shadow-sm space-y-2.5 max-w-xs">
                       <div className="flex justify-between items-center pb-2 border-b border-apple-gray-100">
                         <span className="text-[10px] font-bold text-apple-gray-800 uppercase tracking-wider">Invoice Receipt</span>
@@ -1313,29 +1374,19 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
           <p className="text-xs text-[#86868b] font-light">Interact with guest covers, review loyalty progress, and handle direct WhatsApp chat logs.</p>
         </div>
         
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-apple cursor-pointer ${
-              activeTab === 'dashboard' 
-                ? 'bg-apple-gray-800 text-white shadow-sm' 
-                : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
-            }`}
-          >
-            Insights Dashboard
-          </button>
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
               setActiveTab('overview');
               if (profiles.length > 0 && !selectedProfile) setSelectedProfile(profiles[0]);
             }}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-apple cursor-pointer ${
-              (activeTab !== 'dashboard' && activeTab !== 'inbox') 
+              ['overview', 'timeline', 'invoices', 'whatsapp', 'notes'].includes(activeTab)
                 ? 'bg-apple-gray-800 text-white shadow-sm' 
                 : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
             }`}
           >
-            Customer Catalog
+            Customers
           </button>
           <button
             onClick={() => {
@@ -1351,7 +1402,37 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
                 : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
             }`}
           >
-            WhatsApp Inbox
+            Inbox
+          </button>
+          <button
+            onClick={() => setActiveTab('campaigns')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-apple cursor-pointer ${
+              activeTab === 'campaigns' 
+                ? 'bg-apple-gray-800 text-white shadow-sm' 
+                : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
+            }`}
+          >
+            Campaigns ⭐
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-apple cursor-pointer ${
+              activeTab === 'dashboard' 
+                ? 'bg-apple-gray-800 text-white shadow-sm' 
+                : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
+            }`}
+          >
+            Analytics
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-apple cursor-pointer ${
+              activeTab === 'settings' 
+                ? 'bg-apple-gray-800 text-white shadow-sm' 
+                : 'bg-white border border-apple-gray-100 text-[#86868b] hover:text-apple-gray-800'
+            }`}
+          >
+            Settings
           </button>
         </div>
       </div>
@@ -1367,6 +1448,17 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
             setActiveTab('overview');
           }}
         />
+      ) : activeTab === 'campaigns' ? (
+        <CampaignsTab
+          settings={settings}
+          profiles={profiles}
+          onRefreshInbox={() => fetchWhatsAppMessages(true)}
+        />
+      ) : activeTab === 'settings' ? (
+        <CRMSettingsTab
+          settings={settings}
+          onSettingsUpdate={onSettingsUpdate}
+        />
       ) : activeTab === 'inbox' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fade-in">
           {/* Left Column: WhatsApp Conversations Sidebar */}
@@ -1376,12 +1468,21 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
                 WhatsApp Chats
                 {isPollLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-apple-blue-500" />}
               </span>
-              <button
-                onClick={() => fetchWhatsAppMessages(true)}
-                className="text-[9px] font-bold text-apple-blue-500 hover:underline cursor-pointer"
-              >
-                Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsTerminalOpen(true)}
+                  className="p-1 rounded text-apple-gray-400 hover:text-apple-blue-500 hover:bg-apple-gray-50 transition-all cursor-pointer flex items-center"
+                  title="Secure Operator Terminal"
+                >
+                  <TerminalIcon className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => fetchWhatsAppMessages(true)}
+                  className="text-[9px] font-bold text-apple-blue-500 hover:underline cursor-pointer"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
 
             <div className="relative">
@@ -1452,26 +1553,44 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
 
                 return filtered.map((c) => {
                   const isSelected = selectedConversationPhone === c.phone;
+                  const hasUnread = c.unreadCount > 0;
+                  
+                  let cardClass = '';
+                  if (isSelected) {
+                    cardClass = 'bg-emerald-50/60 border-emerald-400 shadow-sm';
+                  } else if (hasUnread) {
+                    cardClass = 'bg-red-50/50 border-red-300 shadow-sm';
+                  } else {
+                    cardClass = 'bg-apple-gray-50/40 border-apple-gray-100 hover:border-emerald-550/20';
+                  }
+
+                  let nameClass = 'text-xs truncate leading-snug ';
+                  if (hasUnread) {
+                    nameClass += 'text-red-600 font-extrabold';
+                  } else if (isSelected) {
+                    nameClass += 'text-emerald-800 font-bold';
+                  } else {
+                    nameClass += 'text-apple-gray-800 font-semibold';
+                  }
+
                   return (
                     <div
                       key={c.phone}
                       onClick={() => setSelectedConversationPhone(c.phone)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-3 ${
-                        isSelected 
-                          ? 'bg-apple-blue-50 border-apple-blue-150 shadow-sm' 
-                          : 'bg-apple-gray-50/40 border-apple-gray-100 hover:border-apple-blue-500/20'
-                      }`}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-3 ${cardClass}`}
                     >
                       <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="w-8 h-8 rounded-full bg-apple-gray-100 border border-apple-gray-200 text-apple-gray-800 flex items-center justify-center font-bold text-xs shrink-0">
+                        <div className={`w-8 h-8 rounded-full border text-apple-gray-800 flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isSelected ? 'bg-emerald-100 border-emerald-300' : (hasUnread ? 'bg-red-100 border-red-300' : 'bg-apple-gray-100 border-apple-gray-200')
+                        }`}>
                           {c.customerName[0]}
                         </div>
                         <div className="overflow-hidden">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <h4 className="text-xs font-bold text-apple-gray-800 truncate leading-snug">{c.customerName}</h4>
-                            <span className="text-[9px] text-[#86868b] font-mono">({c.phone})</span>
+                            <h4 className={nameClass}>{c.customerName}</h4>
+                            <span className={`text-[9px] font-mono ${hasUnread ? 'text-red-500 font-bold' : 'text-[#86868b]'}`}>({c.phone})</span>
                           </div>
-                          <p className="text-[10px] text-[#86868b] truncate mt-0.5 flex items-center gap-1">
+                          <p className={`text-[10px] truncate mt-0.5 flex items-center gap-1 ${hasUnread ? 'text-red-700 font-bold' : 'text-[#86868b]'}`}>
                             {c.lastMsgDirection === 'outgoing' && (
                               <span className="shrink-0">
                                 {c.lastMsgStatus === 'read' ? <CheckCheck className="w-3.5 h-3.5 text-apple-blue-500" /> :
@@ -1487,11 +1606,11 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
                       </div>
 
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span className="text-[8px] text-[#86868b] font-mono">
+                        <span className={`text-[8px] font-mono ${hasUnread ? 'text-red-500 font-bold' : 'text-[#86868b]'}`}>
                           {c.lastMsgTime.getTime() > 0 ? c.lastMsgTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
                         {c.unreadCount > 0 && (
-                          <span className="w-4 h-4 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-[9px]">
+                          <span className="w-5 h-5 bg-[#25D366] text-white rounded-full flex items-center justify-center font-extrabold text-[9px] shadow-sm animate-pulse">
                             {c.unreadCount}
                           </span>
                         )}
@@ -1615,7 +1734,7 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
                     <div className="w-full h-1.5 bg-apple-gray-50 border border-apple-gray-100 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min((selectedProfile.loyaltyPoints / 1000) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((selectedProfile.loyaltyPoints / 55) * 100, 100)}%` }}
                       />
                     </div>
                   </div>
@@ -1975,7 +2094,506 @@ export const CRM: React.FC<CRMProps> = ({ settings, currentUser }) => {
           onClose={() => setPreviewBlob(null)}
         />
       )}
+
+      <HackerTerminalModal
+        isOpen={isTerminalOpen}
+        onClose={() => setIsTerminalOpen(false)}
+        profiles={profiles}
+        crmScriptUrl={settings.crmScriptUrl || import.meta.env.VITE_CRM_SCRIPT_URL || ''}
+        onRefresh={() => fetchWhatsAppMessages(false)}
+      />
     </div>
   );
 };
+
+export const MatrixRain: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = canvas.parentElement?.clientWidth || 600;
+    canvas.height = canvas.parentElement?.clientHeight || 400;
+
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$#@%&*()_+=[]{}|;:,.<>?';
+    const fontSize = 12;
+    const columns = canvas.width / fontSize;
+    const rainDrops = Array.from({ length: columns }, () => 1);
+
+    const draw = () => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#0F0';
+      ctx.font = fontSize + 'px monospace';
+
+      for (let i = 0; i < rainDrops.length; i++) {
+        const text = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+        ctx.fillText(text, i * fontSize, rainDrops[i] * fontSize);
+
+        if (rainDrops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          rainDrops[i] = 0;
+        }
+        rainDrops[i]++;
+      }
+    };
+
+    const interval = setInterval(draw, 30);
+    
+    const handleResize = () => {
+      if (canvas && canvas.parentElement) {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  return (
+    <div className="relative w-full h-full">
+      <canvas ref={canvasRef} className="w-full h-full block" />
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 bg-green-500 hover:bg-green-600 text-black font-extrabold px-3 py-1 text-[10px] rounded border border-green-400 transition-all cursor-pointer shadow-lg active:scale-95"
+      >
+        EXIT CODE RAIN
+      </button>
+    </div>
+  );
+};
+
+interface HackerTerminalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  profiles: CRMProfile[];
+  crmScriptUrl: string;
+  onRefresh: () => void;
+}
+
+export const HackerTerminalModal: React.FC<HackerTerminalModalProps> = ({
+  isOpen,
+  onClose,
+  profiles,
+  crmScriptUrl,
+  onRefresh
+}) => {
+  const [history, setHistory] = useState<string[]>([]);
+  const [input, setInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showMatrix, setShowMatrix] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [deleteStep, setDeleteStep] = useState<number>(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsAuthenticated(false);
+      setInput('');
+      setHistory([]);
+      const lines = [
+        'Chapter One CRM Core v4.2.0-secure',
+        'SYSTEM: SECURE PORT SHELL OPENED.',
+        'OWNER DETECTED: TUSHAR CHAUHAN',
+        '-------------------------------------------------------',
+        'WARNING: UNAUTHORIZED ACCESS IS STRICTLY PROHIBITED.',
+        'IF YOU ARE NOT TUSHAR CHAUHAN, DISCONNECT IMMEDIATELY.',
+        'PLEASE ENTER PASSCODE TO ESCALATE PRIVILEGES: ',
+      ];
+      
+      let delay = 0;
+      lines.forEach((line) => {
+        setTimeout(() => {
+          setHistory(prev => [...prev, line]);
+        }, delay);
+        delay += 100;
+      });
+
+      setTimeout(() => inputRef.current?.focus(), 800);
+    }
+  }, [isOpen]);
+
+  // Keep input focused automatically on any screen click when terminal is open
+  useEffect(() => {
+    if (isOpen) {
+      const handleGlobalClick = () => {
+        inputRef.current?.focus();
+      };
+      window.addEventListener('click', handleGlobalClick);
+      return () => {
+        window.removeEventListener('click', handleGlobalClick);
+      };
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [history]);
+
+  if (!isOpen) return null;
+
+  const handleCommand = async (cmd: string) => {
+    const trimmed = cmd.trim();
+    if (!trimmed) return;
+
+    setInput('');
+
+    if (!isAuthenticated) {
+      // Mask password entry in terminal history
+      const masked = '*'.repeat(trimmed.length);
+      setHistory(prev => [...prev, `operator@chapterone:~$ ${masked}`]);
+
+      if (trimmed === '8520') {
+        setIsAuthenticated(true);
+        setHistory(prev => [
+          ...prev,
+          'ACCESS GRANTED. PRIVILEGES ESCALATED.',
+          'ESTABLISHING ENCRYPTED TUNNEL TO GOOGLE SPREADSHEETS... [OK]',
+          'SYSTEM ONLINE. CODES DETECTED. READY.',
+          'Type "help" to display operational directives.',
+          ''
+        ]);
+      } else {
+        setHistory(prev => [
+          ...prev,
+          'ACCESS DENIED. INVALID PASSCODE.',
+          'PLEASE ENTER PASSCODE TO ESCALATE PRIVILEGES: '
+        ]);
+      }
+      return;
+    }
+
+    setHistory(prev => [...prev, `pos-crm-operator@chapterone:~$ ${trimmed}`]);
+
+    if (deleteStep === 1) {
+      setDeleteStep(0);
+      setIsProcessing(true);
+      setHistory(prev => [...prev, `SEARCHING FOR RECIPIENT "${trimmed}" IN DATABASE...`]);
+      
+      const query = trimmed.toLowerCase();
+      const matchedProfile = profiles.find(
+        p => p && (
+          String(p.name).toLowerCase().includes(query) ||
+          String(p.phone).replace(/\D/g, '').includes(query)
+        )
+      );
+
+      if (!matchedProfile) {
+        setHistory(prev => [
+          ...prev,
+          `ERROR: NO RECORDS MATCHED THE QUERY "${trimmed}". PURGE ABORTED.`,
+          ''
+        ]);
+        setIsProcessing(false);
+        return;
+      }
+
+      const cleanPhone = String(matchedProfile.phone).replace(/\D/g, '');
+      const finalPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone;
+
+      setHistory(prev => [
+        ...prev,
+        `MATCH FOUND: "${matchedProfile.name}" (${finalPhone})`,
+        `ATTEMPTING PURGE OF CONVERSATION IN CLOUD LOGS...`,
+        `CALLING REMOTE ENDPOINT ${crmScriptUrl.substring(0, 45)}...`
+      ]);
+
+      try {
+        const res = await fetch(crmScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'DELETE_CONVERSATION',
+            phone: finalPhone
+          })
+        });
+
+        if (res.ok) {
+          setHistory(prev => [
+            ...prev,
+            `[OK] RECEIVED DELETION HANDSHAKE.`,
+            `REMOVING SPREADSHEET RECORDS... [OK]`,
+            `CRITICAL PURGE COMPLETE FOR ${matchedProfile.name.toUpperCase()}.`,
+            'SUCCESS. TARGET SHADOWED.',
+            ''
+          ]);
+          onRefresh();
+        } else {
+          setHistory(prev => [
+            ...prev,
+            `FAILED: REMOTE DATABASE RETURNED HTTP ERROR ${res.status}.`,
+            ''
+          ]);
+        }
+      } catch (err: any) {
+        setHistory(prev => [
+          ...prev,
+          `CRITICAL FAILURE: ${err.message.toUpperCase()}`,
+          ''
+        ]);
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    const args = trimmed.split(' ');
+    const primaryCmd = args[0].toLowerCase();
+
+    switch (primaryCmd) {
+      case 'help':
+        setHistory(prev => [
+          ...prev,
+          'Available Directives:',
+          '  help          - Display this operational interface menu.',
+          '  delete        - Erase customer chat logs from the local CRM database only.',
+          '  matrix        - Activate green virtual code rain canvas interface overlay.',
+          '  clear         - Wipe the terminal log lines.',
+          '  exit          - Shutdown and close secure shell terminal.',
+          ''
+        ]);
+        break;
+      case 'clear':
+        setHistory([]);
+        break;
+      case 'exit':
+      case 'close':
+        onClose();
+        break;
+      case 'matrix':
+        setHistory(prev => [...prev, 'LAUNCHING CANVAS DATA CODE STREAMS...', '']);
+        setShowMatrix(true);
+        break;
+      case 'delete':
+        setHistory(prev => [
+          ...prev,
+          'WARNING: Purging CRM logs is irreversible. It will only erase records from your POS CRM view, not the customer\'s phone.',
+          'Enter target customer name or phone to purge: '
+        ]);
+        setDeleteStep(1);
+        break;
+      default:
+        setHistory(prev => [...prev, `ERROR: Command "${primaryCmd}" not recognized. Type "help" for options.`, '']);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-[9999] p-4 font-mono">
+      <div className="w-full max-w-2xl bg-black border border-green-500 rounded-lg shadow-2xl flex flex-col h-[480px] overflow-hidden relative">
+        
+        {/* Terminal Header */}
+        <div className="bg-zinc-900 border-b border-green-950 px-4 py-2 flex justify-between items-center text-xs text-green-400 font-bold shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-600" />
+            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+            <span className="ml-1 tracking-wide">
+              {isAuthenticated ? 'pos-crm-operator@chapterone:~$ [ROOT]' : 'pos-crm-operator@chapterone:~$ [LOCKED]'}
+            </span>
+          </div>
+          <button 
+            onClick={onClose}
+            className="text-green-500 hover:text-green-300 font-extrabold focus:outline-none text-sm transition-all"
+          >
+            [X]
+          </button>
+        </div>
+
+        {/* Terminal Body */}
+        <div 
+          className="flex-1 p-4 overflow-y-auto space-y-1 text-xs text-green-500 font-semibold no-scrollbar relative"
+          onClick={() => inputRef.current?.focus()}
+        >
+          {showMatrix ? (
+            <div className="absolute inset-0 bg-black z-50 flex flex-col items-center justify-center select-none overflow-hidden">
+              <MatrixRain onClose={() => setShowMatrix(false)} />
+            </div>
+          ) : null}
+
+          {history.map((line, idx) => (
+            <div key={idx} className="whitespace-pre-wrap leading-relaxed min-h-[16px]">
+              {line}
+            </div>
+          ))}
+          
+          {isProcessing && (
+            <div className="text-green-400 flex items-center gap-1.5 animate-pulse mt-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>COMMUNICATION LINK ACTIVE... BYPASSING STORAGE LAYERS...</span>
+            </div>
+          )}
+
+          <div ref={terminalEndRef} />
+        </div>
+
+        {/* Terminal Input */}
+        <div className="bg-zinc-950 border-t border-green-950 p-3 flex items-center gap-2 shrink-0">
+          <span className="text-xs text-green-400 font-bold">
+            {isAuthenticated ? 'pos-crm-operator@chapterone:~$' : 'passcode:~$'}
+          </span>
+          <input
+            ref={inputRef}
+            type={isAuthenticated ? 'text' : 'password'}
+            disabled={isProcessing}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleCommand(input);
+              }
+            }}
+            className="flex-1 bg-transparent text-green-400 outline-none border-none text-xs font-bold font-mono caret-green-500"
+            autoFocus
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CRMSettingsTab: React.FC<{
+  settings: CafeSettings;
+  onSettingsUpdate: (settings: CafeSettings) => void;
+}> = ({ settings, onSettingsUpdate }) => {
+  const toast = useToast();
+  const [token, setToken] = useState(settings.waAccessToken || '');
+  const [phoneId, setPhoneId] = useState(settings.waPhoneNumberId || '');
+  const [wabaId, setWabaId] = useState(settings.waWabaId || '');
+  const [scriptUrl, setScriptUrl] = useState(settings.crmScriptUrl || '');
+  
+  const [autoReview, setAutoReview] = useState(settings.reviewEnableAuto || false);
+  const [delay, setDelay] = useState(String(settings.reviewDelayMinutes ?? 10));
+  const [reviewTemplate, setReviewTemplate] = useState(settings.reviewTemplateName || 'google_review_request');
+
+  const handleSave = async () => {
+    const updated = {
+      ...settings,
+      waAccessToken: token,
+      waPhoneNumberId: phoneId,
+      waWabaId: wabaId,
+      crmScriptUrl: scriptUrl,
+      reviewEnableAuto: autoReview,
+      reviewDelayMinutes: parseInt(delay, 10) || 10,
+      reviewTemplateName: reviewTemplate,
+    };
+
+    try {
+      await saveSettings(updated);
+      onSettingsUpdate(updated);
+      toast.success('Settings Saved', 'CRM settings saved successfully.');
+    } catch (err: any) {
+      toast.error('Save Failed', err.message);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-apple-gray-100 p-6 rounded-2xl shadow-sm max-w-2xl space-y-6 text-apple-gray-800 animate-fade-in">
+      <h3 className="text-sm font-bold pb-2 border-b border-apple-gray-50 flex items-center gap-1.5">
+        ⚙️ WhatsApp Cloud API & CRM Configurations
+      </h3>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold text-[#86868b] uppercase">Phone Number ID</label>
+          <input
+            type="text"
+            value={phoneId}
+            onChange={(e) => setPhoneId(e.target.value)}
+            className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold text-[#86868b] uppercase">WABA ID</label>
+          <input
+            type="text"
+            value={wabaId}
+            onChange={(e) => setWabaId(e.target.value)}
+            className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold text-[#86868b] uppercase">Access Token</label>
+        <textarea
+          rows={3}
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50 resize-none font-mono"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold text-[#86868b] uppercase">CRM Sheets Apps Script Web App URL</label>
+        <input
+          type="text"
+          value={scriptUrl}
+          onChange={(e) => setScriptUrl(e.target.value)}
+          className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50"
+        />
+      </div>
+
+      <div className="pt-4 border-t border-apple-gray-50 space-y-4">
+        <h4 className="text-xs font-bold text-apple-gray-800">Review Solicitation Rules</h4>
+        
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-xs font-semibold text-apple-gray-800 block">Auto-request review after checkout</span>
+            <span className="text-[10px] text-[#86868b]">Automatically schedules review template dispatches</span>
+          </div>
+          <button
+            onClick={() => setAutoReview(!autoReview)}
+            className={`w-11 h-6 rounded-full transition-apple relative outline-none border border-apple-gray-200/50 cursor-pointer ${
+              autoReview ? 'bg-green-500 border-green-600' : 'bg-apple-gray-150'
+            }`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-apple ${
+              autoReview ? 'translate-x-5' : 'translate-x-0'
+            }`} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#86868b] uppercase">Delay Minutes</label>
+            <input
+              type="number"
+              value={delay}
+              onChange={(e) => setDelay(e.target.value)}
+              className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50 font-mono"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#86868b] uppercase">Review Template Name</label>
+            <input
+              type="text"
+              value={reviewTemplate}
+              onChange={(e) => setReviewTemplate(e.target.value)}
+              className="w-full text-xs px-3.5 py-2 border border-apple-gray-100 rounded-xl outline-none focus:border-apple-blue-500 bg-apple-gray-50/50"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-apple-gray-50 flex justify-end">
+        <button
+          onClick={handleSave}
+          className="px-6 py-2 bg-apple-gray-800 hover:bg-apple-gray-900 text-white rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 animate-fade-in"
+        >
+          Save Configurations
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default CRM;

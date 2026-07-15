@@ -11,7 +11,7 @@ import {
   Calculator
 } from 'lucide-react';
 import type { Customer, Bill, CafeSettings, PaymentMethod, PaymentDetails } from '../types';
-import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, calculateBasementCharge, getInventory, adjustStock } from '../utils/db';
+import { getNextBillNumber, saveBill, deleteCustomer, saveAuditLog, syncToGoogleSheets, calculateBasementCharge, getInventory, adjustStock, getBills } from '../utils/db';
 import { downloadReceiptPDF } from '../utils/pdfGenerator';
 import { sendCheckoutInvoice } from '../utils/whatsappCloud';
 import { useToast } from '../context/toastContext';
@@ -63,6 +63,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [generatedBill, setGeneratedBill] = useState<Bill | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Loyalty profile overview for returning guests
+  const [loyaltyProfile, setLoyaltyProfile] = useState<{
+    visitCount: number;
+    totalSpend: number;
+    loyaltyPoints: number;
+    tier: string;
+    recommendedDiscount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!customer.phone) return;
+    const loadLoyaltyInfo = async () => {
+      try {
+        const allBills = await getBills();
+        const cleanTarget = customer.phone.replace(/\D/g, '');
+        const customerBills = allBills.filter(b => b.customerPhone.replace(/\D/g, '') === cleanTarget);
+        
+        if (customerBills.length > 0) {
+          const totalSpend = customerBills.reduce((acc, curr) => acc + curr.grandTotal, 0);
+          const loyaltyPoints = Math.floor(totalSpend / 100);
+          
+          let tier = 'Bronze';
+          let recommendedDiscount = 0;
+          if (loyaltyPoints >= 55) {
+            tier = 'Platinum';
+            recommendedDiscount = 15;
+          } else if (loyaltyPoints >= 50) {
+            tier = 'Gold';
+            recommendedDiscount = 10;
+          } else if (loyaltyPoints >= 20) {
+            tier = 'Silver';
+            recommendedDiscount = 5;
+          }
+
+          setLoyaltyProfile({
+            visitCount: customerBills.length,
+            totalSpend,
+            loyaltyPoints,
+            tier,
+            recommendedDiscount
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load loyalty info for checkout:', err);
+      }
+    };
+    loadLoyaltyInfo();
+  }, [customer.phone]);
 
   // Time & Seating Calculations
   const elapsedMs = new Date(exitTime).getTime() - new Date(customer.entryTime).getTime();
@@ -309,7 +358,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm">
       <div className="bg-white rounded-3xl border border-apple-gray-100 shadow-apple-medium w-full max-w-4xl overflow-hidden animate-fade-in mx-4">
         
         {/* Modal Header */}
@@ -403,6 +452,61 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                 {/* Loyalty Status Recap Banner */}
+                {loyaltyProfile && (
+                  <div className="p-4 bg-gradient-to-r from-amber-500/10 to-amber-600/5 border border-amber-500/20 rounded-2xl space-y-2 text-apple-gray-800 animate-fade-in">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-[8px] text-amber-600 uppercase tracking-wider block font-bold">Loyalty Profile</span>
+                        <span className="font-bold text-sm block text-amber-900">{loyaltyProfile.tier} Member</span>
+                        <span className="text-[9px] text-amber-500 font-light block">
+                          ({loyaltyProfile.visitCount} visits, ₹{loyaltyProfile.totalSpend.toFixed(2)} lifetime spend)
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8px] text-amber-600 uppercase tracking-wider block font-bold">Loyalty Points</span>
+                        <span className="font-mono font-bold text-sm block text-amber-900">{loyaltyProfile.loyaltyPoints} pts</span>
+                      </div>
+                    </div>
+
+                    {/* Recommendation Row */}
+                    {loyaltyProfile.recommendedDiscount > 0 && (
+                      <div className="flex items-center justify-between pt-2 border-t border-amber-500/10 gap-2">
+                        <span className="text-[10px] text-amber-800">
+                          Suggested Discount: <strong>{loyaltyProfile.recommendedDiscount}% OFF</strong>
+                        </span>
+                        <button
+                          onClick={() => setDiscountPercent(loyaltyProfile.recommendedDiscount)}
+                          className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-[9px] cursor-pointer transition-all active:scale-95 shadow-sm"
+                        >
+                          Apply {loyaltyProfile.recommendedDiscount}%
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Flat redemption option (1 pt = ₹1) */}
+                    {loyaltyProfile.loyaltyPoints > 0 && (
+                      <div className="flex items-center justify-between pt-2 border-t border-amber-500/10 gap-2">
+                        <span className="text-[10px] text-amber-800">
+                          Redeem Points (Max: ₹{loyaltyProfile.loyaltyPoints} off)
+                        </span>
+                        <button
+                          onClick={() => {
+                            const pointsDiscount = Math.min(loyaltyProfile.loyaltyPoints, rawSubtotal);
+                            const newTotal = grandTotal - pointsDiscount;
+                            setCustomGrandTotal(Math.max(0, newTotal));
+                            setUseCustomGrandTotal(true);
+                            toast.success('Redemption Applied', `Flat ₹${pointsDiscount} discount applied using loyalty points.`);
+                          }}
+                          className="px-2.5 py-1 bg-apple-gray-800 hover:bg-apple-gray-900 text-white font-bold rounded-lg text-[9px] cursor-pointer transition-all active:scale-95 shadow-sm"
+                        >
+                          Redeem Points
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

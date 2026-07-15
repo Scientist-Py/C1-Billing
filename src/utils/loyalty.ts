@@ -9,10 +9,10 @@ export type LoyaltyTier = 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
  * Determine loyalty tier based on total accumulated points.
  */
 export const getLoyaltyTier = (points: number): LoyaltyTier => {
-  if (points >= 1000) return 'Platinum';
-  if (points >= 500) return 'Gold';
-  if (points >= 100) return 'Silver';
-  return 'Bronze';
+  if (points >= 55) return 'Platinum'; // ₹5,500 spend (55 points)
+  if (points >= 50) return 'Gold';     // ₹5,000 spend (50 points)
+  if (points >= 20) return 'Silver';   // ₹2,000 spend (20 points)
+  return 'Bronze';                     // ₹0 - ₹1,999 spend
 };
 
 /**

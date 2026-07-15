@@ -1,7 +1,7 @@
-import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User, InventoryItem, InventoryLog, Expense } from '../types';
+import type { MenuItem, Customer, Bill, CafeSettings, AuditLog, User, InventoryItem, InventoryLog, Expense, Campaign } from '../types';
 
 const DB_NAME = 'ChapterOneCafeDB';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 
 let dbInstance: IDBDatabase | null = null;
 const localEditTimes = new Map<string, number>();
@@ -9,7 +9,7 @@ class PersistedSyncExclusions {
   private key: string;
   private lifetime: number;
 
-  constructor(key: string, lifetime: number = 120000) {
+  constructor(key: string, lifetime: number = 3600000) {
     this.key = key;
     this.lifetime = lifetime;
   }
@@ -187,6 +187,11 @@ export const initDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains('scheduledJobs')) {
         db.createObjectStore('scheduledJobs', { keyPath: 'id' });
       }
+
+      // Create Campaigns store
+      if (!db.objectStoreNames.contains('campaigns')) {
+        db.createObjectStore('campaigns', { keyPath: 'id' });
+      }
     };
   });
 };
@@ -227,11 +232,16 @@ export const seedDefaultData = async () => {
       reviewDelayMinutes: 10,
       reviewTemplateName: 'google_review_request',
       reviewSchedulerEnabled: true,
-      reviewRetryEnabled: true
+      reviewRetryEnabled: true,
+      mobileAccessKey: 'Ch1Pos@2026_SecureAccessKey!'
     };
     await saveSettings(defaultSettings);
   } else {
     let updated = false;
+    if (!settingsObj.mobileAccessKey) {
+      settingsObj.mobileAccessKey = 'Ch1Pos@2026_SecureAccessKey!';
+      updated = true;
+    }
     if (!settingsObj.groqApiKey || settingsObj.groqApiKey.trim().length === 0) {
       settingsObj.groqApiKey = targetKey;
       updated = true;
@@ -1384,4 +1394,36 @@ export const purgeAllData = async (): Promise<void> => {
   } catch (err) {
     console.warn('Failed to clear remote Google Sheet:', err);
   }
+};
+
+export const getCampaigns = async (): Promise<Campaign[]> => {
+  try {
+    const { store } = await getStore('campaigns', 'readonly');
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error('Failed to get campaigns:', err);
+    return [];
+  }
+};
+
+export const saveCampaign = async (campaign: Campaign): Promise<void> => {
+  const { store } = await getStore('campaigns', 'readwrite');
+  return new Promise((resolve, reject) => {
+    const request = store.put(campaign);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const deleteCampaign = async (id: string): Promise<void> => {
+  const { store } = await getStore('campaigns', 'readwrite');
+  return new Promise((resolve, reject) => {
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 };

@@ -103,6 +103,7 @@ export interface CafeSettings {
   reviewTemplateName?: string;
   reviewSchedulerEnabled?: boolean;
   reviewRetryEnabled?: boolean;
+  mobileAccessKey?: string;
 }
 
 export interface AuditLog {
@@ -199,7 +200,43 @@ export interface SyncTask {
   type: 'CHECKIN' | 'CHECKOUT' | 'EXPENSE' | 'AUDIT' | 'CRM_UPSERT' | 'CRM_TIMELINE' | 'WHATSAPP_SEND';
   payload: any;
   timestamp: string;
-  status: 'pending' | 'processing' | 'failed';
+  status: 'pending' | 'processing' | 'failed' | 'blocked';
   retryCount: number;
   lastError?: string;
+}
+
+export interface CampaignRecipient {
+  name: string;
+  phone: string;
+  lifetimeSpend: number;
+  visits: number;
+  messageId?: string;
+  deliveryStatus: 'queued' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'blocked';
+  failureReason?: string;
+  timestamp?: string;
+}
+
+export interface Campaign {
+  id: string;
+  name: string;
+  type: string; // e.g. 'Marketing' | 'Birthday Offer' | 'Diwali Offer' etc.
+  templateName: string; // 'coupon_offer'
+  offerImage?: string; // local file blob base64 or URL
+  mediaId?: string; // cached Meta media ID
+  offerText: string;
+  expiryDate: string;
+  recipients: CampaignRecipient[];
+  status: 'draft' | 'queued' | 'sending' | 'completed' | 'paused' | 'cancelled';
+  metrics: {
+    queued: number;
+    sending: number;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    blocked: number;
+  };
+  startTime?: string;
+  endTime?: string;
+  duration?: number; // duration in seconds
 }

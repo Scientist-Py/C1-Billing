@@ -130,6 +130,13 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+
+  if (action === "DELETE_CONVERSATION") {
+    var sheet = getOrCreateSheet(ss, "WHATSAPP_MESSAGES");
+    deleteConversation(sheet, payload.phone);
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   
   return ContentService.createTextOutput(JSON.stringify({ error: "Unsupported action" }))
     .setMimeType(ContentService.MimeType.JSON);
@@ -142,7 +149,14 @@ function upsertCustomer(sheet, customer) {
   var phone = cleanPhoneNumber(customer.phone);
   if (!phone) return;
   
-  var headers = getHeaders(sheet);
+  var requiredHeaders = [
+    "customerId", "name", "phone", "created", "lastVisit", "visitCount", 
+    "totalLifetimeSpend", "averageBill", "favouriteItems", "favouriteCategory", 
+    "recentOrders", "orderFrequency", "whatsappHistory", "deliveryStatusHistory", 
+    "readStatus", "googleReviewStatus", "loyaltyPoints", "tags", "customLabels", 
+    "whatsappOptIn", "preferredPayment", "lastInvoice", "vipTier", "notes", "birthday"
+  ];
+  var headers = ensureHeadersExist(sheet, requiredHeaders);
   var data = sheet.getDataRange().getValues();
   var phoneColIdx = headers.indexOf("phone");
   
@@ -406,6 +420,24 @@ function getHeaders(sheet) {
   return range.getValues()[0].map(function(h) { return String(h).trim(); });
 }
 
+function ensureHeadersExist(sheet, requiredHeaders) {
+  var headers = getHeaders(sheet);
+  var missing = [];
+  requiredHeaders.forEach(function(h) {
+    if (headers.indexOf(h) === -1) {
+      missing.push(h);
+    }
+  });
+  if (missing.length > 0) {
+    var lastCol = sheet.getLastColumn();
+    var range = sheet.getRange(1, lastCol + 1, 1, missing.length);
+    range.setValues([missing]);
+    range.setFontWeight("bold");
+    return getHeaders(sheet);
+  }
+  return headers;
+}
+
 /**
  * Helper: standardize formatting of phone numbers (remove symbols, space, handle country codes).
  */
@@ -422,14 +454,12 @@ function updateWhatsAppMessageStatus(ss, msgId, statusType) {
   var sheet = getOrCreateSheet(ss, "WHATSAPP_MESSAGES");
   var headers = getHeaders(sheet);
   var data = sheet.getDataRange().getValues();
-  
   var msgIdColIdx = headers.indexOf("whatsappMessageId");
   var statusColIdx = headers.indexOf("deliveryStatus");
-  
   if (msgIdColIdx === -1 || statusColIdx === -1) return;
   
   for (var i = 1; i < data.length; i++) {
-    if (data[i][msgIdColIdx] === msgId) {
+    if (String(data[i][msgIdColIdx]).trim() === String(msgId).trim()) {
       sheet.getRange(i + 1, statusColIdx + 1).setValue(statusType);
       break;
     }
@@ -438,7 +468,12 @@ function updateWhatsAppMessageStatus(ss, msgId, statusType) {
 
 function addWhatsAppMessage(ss, message) {
   var sheet = getOrCreateSheet(ss, "WHATSAPP_MESSAGES");
-  var headers = getHeaders(sheet);
+  var requiredHeaders = [
+    "conversationId", "customerId", "customerName", "phone", "direction",
+    "messageType", "templateName", "messageText", "mediaType", "mediaUrl",
+    "billNumber", "whatsappMessageId", "deliveryStatus", "timestamp", "staffName"
+  ];
+  var headers = ensureHeadersExist(sheet, requiredHeaders);
   var data = sheet.getDataRange().getValues();
   var msgIdColIdx = headers.indexOf("whatsappMessageId");
   
@@ -447,7 +482,7 @@ function addWhatsAppMessage(ss, message) {
   
   if (msgId && msgIdColIdx > -1) {
     for (var i = 1; i < data.length; i++) {
-      if (data[i][msgIdColIdx] === msgId) {
+      if (String(data[i][msgIdColIdx]).trim() === String(msgId).trim()) {
         rowIndex = i + 1;
         break;
       }
@@ -459,7 +494,11 @@ function addWhatsAppMessage(ss, message) {
   var templateColIdx = headers.indexOf("templateName");
   if (rowIndex === -1 && message.billNumber && message.templateName && billColIdx > -1 && templateColIdx > -1) {
     for (var i = 1; i < data.length; i++) {
-      if (data[i][billColIdx] === message.billNumber && data[i][templateColIdx] === message.templateName) {
+      var sheetBill = String(data[i][billColIdx]).trim();
+      var msgBill = String(message.billNumber).trim();
+      var sheetTemplate = String(data[i][templateColIdx]).trim();
+      var msgTemplate = String(message.templateName).trim();
+      if (sheetBill === msgBill && sheetTemplate === msgTemplate) {
         rowIndex = i + 1;
         break;
       }
@@ -516,4 +555,18 @@ function getCustomerNameFromMaster(masterSheet, phone) {
     }
   }
   return null;
+}
+
+function deleteConversation(sheet, phone) {
+  var headers = getHeaders(sheet);
+  var data = sheet.getDataRange().getValues();
+  var phoneColIdx = headers.indexOf("phone");
+  if (phoneColIdx === -1) return;
+  
+  var targetPhone = cleanPhoneNumber(phone);
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (cleanPhoneNumber(data[i][phoneColIdx]) === targetPhone) {
+      sheet.deleteRow(i + 1);
+    }
+  }
 }

@@ -161,9 +161,9 @@ interface SendTemplateOptions {
   to: string;
   templateName: string;
   languageCode?: string;
-  /** media_id from uploadPDFToMeta — becomes the document header component */
   mediaId?: string;
-  /** Body text parameters matching approved template variable slots */
+  mediaUrl?: string; // Added for campaign link URLs
+  mediaType?: 'document' | 'image'; // Added to support image templates
   bodyParams?: { type: 'text'; text: string }[];
 }
 
@@ -171,7 +171,7 @@ interface SendTemplateOptions {
  * Send an approved Meta WhatsApp Template message.
  *
  * Constructs the exact payload format required by Meta:
- *   - header.type = "document" with media_id
+ *   - header.type = "document" | "image"
  *   - body.parameters = text variables
  *
  * API: POST https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages
@@ -186,6 +186,8 @@ export const sendWhatsAppTemplate = async (
     templateName,
     languageCode = 'en',
     mediaId,
+    mediaUrl,
+    mediaType = 'document',
     bodyParams = [],
   } = options;
 
@@ -201,19 +203,26 @@ export const sendWhatsAppTemplate = async (
 
   // Build components array — only include entries that are actually needed
   const components: object[] = [];
+  const hasMedia = mediaId || mediaUrl;
 
-  if (mediaId) {
-    // Header component with PDF document attachment (uses media_id from upload step)
+  if (hasMedia) {
+    const mediaObj: Record<string, any> = {};
+    if (mediaId) {
+      mediaObj.id = mediaId;
+    } else if (mediaUrl) {
+      mediaObj.link = mediaUrl;
+    }
+
+    if (mediaType === 'document' && mediaId) {
+      mediaObj.filename = 'Chapter_One_Invoice.pdf';
+    }
+
     components.push({
       type: 'header',
       parameters: [
         {
-          type: 'document',
-          document: {
-            id: mediaId,
-            // filename is optional but improves UX on the recipient's end
-            filename: 'Chapter_One_Invoice.pdf',
-          },
+          type: mediaType,
+          [mediaType]: mediaObj,
         },
       ],
     });

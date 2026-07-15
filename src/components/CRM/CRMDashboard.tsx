@@ -12,7 +12,8 @@ import {
   AlertTriangle,
   Send,
   Star,
-  Award
+  Award,
+  Gift
 } from 'lucide-react';
 import type { Bill, CRMProfile } from '../../types';
 import type { WhatsAppMessage } from '../../utils/whatsappCloud';
@@ -74,6 +75,17 @@ export const CRMDashboard: React.FC<CRMDashboardProps> = ({
   const reviewSentCount = reviewMessages.filter(m => m.deliveryStatus !== 'scheduled' && m.deliveryStatus !== 'failed').length;
   const reviewReadCount = reviewMessages.filter(m => m.deliveryStatus === 'read').length;
   const reviewFailedCount = reviewMessages.filter(m => m.deliveryStatus === 'failed').length;
+
+  // C. Campaign Offers Templates Analytics
+  const campaignMessages = outgoingMessages.filter(
+    m => m.templateName === 'coupon_offer' || 
+         m.messageText.includes('Campaign') || 
+         m.messageText.includes('🎁') ||
+         m.messageText.includes('Coupon')
+  );
+  const campaignSentCount = campaignMessages.filter(m => m.deliveryStatus !== 'scheduled').length;
+  const campaignReadCount = campaignMessages.filter(m => m.deliveryStatus === 'read').length;
+  const campaignFailedCount = campaignMessages.filter(m => m.deliveryStatus === 'failed').length;
 
   // C. Overall Delivery Rate
   const totalAttempted = outgoingMessages.filter(m => m.deliveryStatus !== 'scheduled').length;
@@ -223,7 +235,7 @@ export const CRMDashboard: React.FC<CRMDashboardProps> = ({
             WhatsApp Template Dispatch Matrix
           </h4>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Invoice receipts stats */}
             <div className="bg-apple-gray-50/50 border border-apple-gray-100 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -278,6 +290,33 @@ export const CRMDashboard: React.FC<CRMDashboardProps> = ({
                 <div className="bg-white p-1.5 rounded-xl border border-apple-gray-100">
                   <span className="text-[8px] text-[#86868b] block uppercase">Fail</span>
                   <span className="font-mono text-xs font-bold text-red-500">{reviewFailedCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Campaign Offers stats */}
+            <div className="bg-apple-gray-50/50 border border-apple-gray-100 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-apple-gray-800 flex items-center gap-1.5">
+                  <Gift className="w-3.5 h-3.5 text-pink-500" />
+                  Campaign Offers
+                </span>
+                <span className="text-[10px] font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full uppercase">
+                  Template
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white p-2 rounded-xl border border-apple-gray-100">
+                  <span className="text-[9px] text-[#86868b] block uppercase">Sent</span>
+                  <span className="font-mono text-sm font-bold text-apple-gray-800">{campaignSentCount}</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-apple-gray-100">
+                  <span className="text-[9px] text-[#86868b] block uppercase">Read</span>
+                  <span className="font-mono text-sm font-bold text-green-600">{campaignReadCount}</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-apple-gray-100">
+                  <span className="text-[9px] text-[#86868b] block uppercase">Failed</span>
+                  <span className="font-mono text-sm font-bold text-red-500">{campaignFailedCount}</span>
                 </div>
               </div>
             </div>
